@@ -23,10 +23,25 @@ pub enum RepoError {
 #[derive(Error, Debug, Serialize)]
 pub enum LGitIoError {
     #[error(transparent)]
+    OverlayError(#[from] OverlayError),
+
+    #[error(transparent)]
     GitError(#[from] GitError),
 
     #[error(transparent)]
     RepoError(#[from] RepoError),
+}
+
+#[derive(Error, Debug, Serialize)]
+pub enum OverlayError {
+    #[error("Failed retrieving project overlay")]
+    ProjectOverlayNotFoundError(String),
+
+    #[error("Failed retrieving file overlay")]
+    FileOverlayNotFoundError(String),
+
+    #[error("Failed retrieving user overlay")]
+    UserOverlayNotFoundError(String),
 }
 
 #[derive(Error, Debug, Serialize)]
