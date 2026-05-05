@@ -1,11 +1,14 @@
 use actix_cors::Cors;
 use actix_web::web;
+use dashmap::DashMap;
 use std::env;
 use std::path::PathBuf;
 use utoipa::openapi::security::ApiKey;
 use utoipa::openapi::security::ApiKeyValue;
+use uuid::Uuid;
 
 use self::model::app_state::AppState;
+use self::model::overlay::ProjectLiveState;
 use self::routes::global_routes;
 use crate::handler::config_handler::__path_health_check;
 use crate::handler::project_handler::__path_create_project;
@@ -24,7 +27,6 @@ use utoipa::Modify;
 use utoipa::OpenApi;
 use utoipa::openapi::security::SecurityScheme;
 use utoipa_swagger_ui::SwaggerUi;
-
 mod error;
 mod handler;
 mod model;
@@ -121,6 +123,7 @@ async fn init_app_state() -> AppState {
     //
 
     AppState {
+        repo_states: DashMap::<Uuid, ProjectLiveState>::new(),
         repo_loc: repo_loc_path,
     }
 }
