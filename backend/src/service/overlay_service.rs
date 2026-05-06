@@ -8,8 +8,8 @@ use crate::model::overlay::Overlay;
 use crate::model::overlay::OverlayViewRes;
 use crate::model::overlay::UserOverlayRes;
 
-/// Takes a reference to an `Overlay`, performs the async lock read,
-/// snapshots the dash‑maps and returns a fully‑serialisable `OverlayResponse`.
+/// snapshots the dash‑map state and returns a serializable OverlayViewRes
+/// which in turn contains each user-state
 pub async fn build_overlay_response(overlay: &Overlay, user_id: Uuid) -> OverlayViewRes {
     let user_content = overlay
         .user_contents
@@ -40,11 +40,13 @@ pub async fn build_overlay_response(overlay: &Overlay, user_id: Uuid) -> Overlay
 }
 
 // PERF: revisit clone, probably unnecessary
+// Returns a Vec and each entry contains a (String, Strin) tuple. The first element of the tuple
+// holds the branchname and the second element holds its contents
 pub fn extract_overlay_file_contents(
     file_name: String,
     project_id: Uuid,
     state: web::Data<AppState>,
-    // Vec<Branchname, Contents>
+    // Vec<(Branchname, Contents)>
 ) -> Result<Vec<(String, String)>, OverlayError> {
     let mut result: Vec<(String, String)> = Vec::new();
     let file_overlays = state.get_file_overlay(project_id, file_name)?;
