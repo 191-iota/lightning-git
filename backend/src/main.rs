@@ -49,6 +49,7 @@ async fn main() -> std::io::Result<()> {
         fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
             let components = openapi.components.as_mut().unwrap();
             let value = ApiKeyValue::with_description("Authorization", "Bearer ey...");
+            println!("{}", value.name);
             let scheme = SecurityScheme::ApiKey(ApiKey::Header(value));
             components.add_security_scheme("Authorization", scheme);
         }
