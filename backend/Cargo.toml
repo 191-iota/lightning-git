@@ -17,6 +17,7 @@ uuid = { version = "1.18.1", features = ["v4", "serde"] }
 utoipa = { version = "4", features = ["actix_extras", "uuid"] }
 utoipa-swagger-ui = { version = "6", features = ['actix-web'] }
 validator = { version = "0.20.0", features = ["derive"] }
+similar = "2.7.0"
 dashmap = "6.1.0"
 actix-ws = "0.3.1"
 futures-util = "0.3.31"
