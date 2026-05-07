@@ -11,11 +11,13 @@ use self::model::app_state::AppState;
 use self::model::overlay::ProjectLiveState;
 use self::routes::global_routes;
 use crate::handler::config_handler::__path_health_check;
+use crate::handler::merge_handler::__path_get_merge_conflicts;
 use crate::handler::overlay_handler::__path_create_active_overlay;
 use crate::handler::overlay_handler::__path_get_overlay;
 use crate::handler::overlay_ws::__path_ws_overlay_stream;
 use crate::handler::project_handler::__path_create_project;
 use crate::handler::project_handler::__path_get_project_file;
+use crate::model::overlay::Conflict;
 use crate::model::overlay::OverlayViewRes;
 use crate::model::project::CreateProjectReq;
 use crate::model::project::CreateProjectRes;
@@ -67,6 +69,7 @@ async fn main() -> std::io::Result<()> {
             get_overlay,
             create_active_overlay,
             ws_overlay_stream,
+            get_merge_conflicts,
         ),
         components(
             schemas(
@@ -74,6 +77,7 @@ async fn main() -> std::io::Result<()> {
                 CreateProjectRes,
                 FileReadReq,
                 OverlayViewRes,
+                Conflict,
             ),
         ),
         security(( "Authorization" = [] )),
@@ -81,6 +85,7 @@ async fn main() -> std::io::Result<()> {
         tags(
             (name = "project", description = "Project endpoints"),
             (name = "overlay", description = "Overlay endpoints"),
+            (name = "merge", description = "Merge endpoints"),
             (name = "config", description = "Config endpoints"),
         )
     )]
