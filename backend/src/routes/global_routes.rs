@@ -1,12 +1,11 @@
 use actix_web::web;
 
 use crate::handler::config_handler::health_check;
-
-use crate::handler::project_handler::create_project;
-use crate::handler::project_handler::get_project_file;
-
 use crate::handler::overlay_handler::create_active_overlay;
 use crate::handler::overlay_handler::get_overlay;
+use crate::handler::overlay_ws::ws_overlay_stream;
+use crate::handler::project_handler::create_project;
+use crate::handler::project_handler::get_project_file;
 
 // Routes starting with "/api" (auth middleware will be added in a later checkpoint)
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
@@ -16,6 +15,10 @@ pub fn init_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/projects/{id}/{branch}/file",
                 web::post().to(get_project_file),
+            )
+            .route(
+                "/overlay/ws/{project_id}/{user_id}/{file_name:.*}",
+                web::get().to(ws_overlay_stream),
             )
             .route(
                 "/overlay/{project_id}/{user_id}/{file_name}",

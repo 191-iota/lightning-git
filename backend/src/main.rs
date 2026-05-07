@@ -11,8 +11,12 @@ use self::model::app_state::AppState;
 use self::model::overlay::ProjectLiveState;
 use self::routes::global_routes;
 use crate::handler::config_handler::__path_health_check;
+use crate::handler::overlay_handler::__path_create_active_overlay;
+use crate::handler::overlay_handler::__path_get_overlay;
+use crate::handler::overlay_ws::__path_ws_overlay_stream;
 use crate::handler::project_handler::__path_create_project;
 use crate::handler::project_handler::__path_get_project_file;
+use crate::model::overlay::OverlayViewRes;
 use crate::model::project::CreateProjectReq;
 use crate::model::project::CreateProjectRes;
 use crate::model::project::FileReadReq;
@@ -49,7 +53,6 @@ async fn main() -> std::io::Result<()> {
         fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
             let components = openapi.components.as_mut().unwrap();
             let value = ApiKeyValue::with_description("Authorization", "Bearer ey...");
-            println!("{}", value.name);
             let scheme = SecurityScheme::ApiKey(ApiKey::Header(value));
             components.add_security_scheme("Authorization", scheme);
         }
@@ -61,18 +64,23 @@ async fn main() -> std::io::Result<()> {
             health_check,
             create_project,
             get_project_file,
+            get_overlay,
+            create_active_overlay,
+            ws_overlay_stream,
         ),
         components(
             schemas(
                 CreateProjectReq,
                 CreateProjectRes,
                 FileReadReq,
+                OverlayViewRes,
             ),
         ),
         security(( "Authorization" = [] )),
         modifiers(&SecuritySchemas),
         tags(
             (name = "project", description = "Project endpoints"),
+            (name = "overlay", description = "Overlay endpoints"),
             (name = "config", description = "Config endpoints"),
         )
     )]
