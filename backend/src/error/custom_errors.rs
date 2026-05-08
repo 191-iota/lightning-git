@@ -13,6 +13,18 @@ pub enum RepoError {
         source: Box<LGitIoError>,
     },
 
+    #[error("Database insertion error: {0}")]
+    InsertionError(String),
+
+    #[error("Extraction error:{0}")]
+    UpdateError(String),
+
+    #[error("Extraction error:{0}")]
+    ExtractionError(String),
+
+    #[error("Deletion error:{0}")]
+    DeletionError(String),
+
     #[error("Invalid url error: {0}")]
     InvalidUrl(String),
 

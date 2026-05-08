@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use dashmap::DashMap;
 use dashmap::Entry;
+use supabase_auth::models::AuthClient;
+use supabase_rs::SupabaseClient;
 use tokio::sync::broadcast;
 use tokio::time::Instant;
 use uuid::Uuid;
@@ -18,7 +20,12 @@ use super::overlay::UserOverlay;
 pub struct AppState {
     // Key: project id; Value: live state
     pub repo_states: DashMap<Uuid, ProjectLiveState>,
+    pub sb_client: SupabaseClient,
     pub repo_loc: PathBuf,
+    pub auth_client: AuthClient,
+    pub github_client_id: String,
+    pub github_callback_url: String,
+    pub github_client_secret: String,
 }
 
 impl AppState {

@@ -1,6 +1,7 @@
 use actix_web::web;
 
 use crate::handler::config_handler::health_check;
+use crate::handler::merge_handler::get_merge_conflicts;
 use crate::handler::overlay_handler::create_active_overlay;
 use crate::handler::overlay_handler::get_overlay;
 use crate::handler::overlay_ws::ws_overlay_stream;
@@ -27,6 +28,10 @@ pub fn init_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/overlay/{project_id}/{user_id}/{file_name}/{branch}",
                 web::put().to(create_active_overlay),
+            )
+            .route(
+                "/merge/{project_id}/{file_name:.*}",
+                web::get().to(get_merge_conflicts),
             ),
     )
     .service(web::scope("").route("/health", web::get().to(health_check)));
