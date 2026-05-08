@@ -1121,6 +1121,8 @@ dependencies = [
  "env_logger",
  "futures-util",
  "log",
+ "once_cell",
+ "regex",
  "serde",
  "serde_json",
  "similar",
