@@ -161,12 +161,10 @@ pub fn compute_conflicts(all_hunks: Vec<Hunk>) -> Vec<Conflict> {
         if let Some(last) = groups.last_mut()
             && hunk.base_start <= last.1
         {
-            // Overlaps with current group — extend it
             last.1 = cmp::max(last.1, hunk.base_end);
             last.2.push(hunk);
             continue;
         }
-        // No overlap — start a new group
         let end = hunk.base_end;
         let start = hunk.base_start;
         groups.push((start, end, vec![hunk]));
@@ -186,7 +184,6 @@ pub fn compute_conflicts(all_hunks: Vec<Hunk>) -> Vec<Conflict> {
                 return None;
             }
 
-            // Check if all hunks produce the same result — if so, it's a clean merge
             let first_signature = hunk_signature(&hunks[0]);
             let all_same = hunks
                 .iter()
