@@ -3,6 +3,7 @@ use actix_web::web;
 use dashmap::DashMap;
 use std::env;
 use std::path::PathBuf;
+use supabase_auth::models::AuthClient;
 use utoipa::openapi::security::ApiKey;
 use utoipa::openapi::security::ApiKeyValue;
 use uuid::Uuid;
@@ -29,6 +30,7 @@ use dotenv::dotenv;
 use env_logger::Env;
 use log::info;
 use log::warn;
+use supabase_rs::SupabaseClient;
 use utoipa::Modify;
 use utoipa::OpenApi;
 use utoipa::openapi::security::SecurityScheme;
@@ -131,6 +133,10 @@ fn setup_address() -> (String, String) {
 async fn init_app_state() -> AppState {
     let repo_location = env::var("GIT_REPO_DEV").expect("Could not find GIT_REPO_DEV");
     let repo_loc_path = PathBuf::from(repo_location);
+    let sb_client = init_supabase_db_client();
+    let gh_client = env::var("GITHUB_CLIENT_ID").expect("Could not find GITHUB_CLIENT_ID");
+    let gh_callback = env::var("GITHUB_CALLBACK_URL").expect("Could not find GITHUB_CALLBACK_URL");
+    let gh_secret = env::var("GITHUB_CLIENT_SECRET").expect("Could not find GITHUB_CLIENT_SECRET");
 
     // Uncomment when the time comes
     // let repositories_location_prod = env::var("GIT_REPO_DEV").expect("Could not find GIT_REPO_DEV");
@@ -139,5 +145,28 @@ async fn init_app_state() -> AppState {
     AppState {
         repo_states: DashMap::<Uuid, ProjectLiveState>::new(),
         repo_loc: repo_loc_path,
+        sb_client,
+        auth_client: init_auth_client(),
+        github_client_id: gh_client,
+        github_callback_url: gh_callback,
+        github_client_secret: gh_secret,
     }
+}
+
+fn init_supabase_db_client() -> SupabaseClient {
+    supabase_rs::SupabaseClient::new(
+        env::var("SUPABASE_URL").expect("Could not find SUPABASE_URL"),
+        env::var("SUPABASE_API_KEY").expect("Could not find SUPABASE_ANON_KEY"),
+    )
+    .expect("Failed initializing Supabase client")
+}
+
+fn init_auth_client() -> AuthClient {
+    dotenv().ok();
+
+    let url = env::var("SUPABASE_URL").expect("Undefined env: SUPABASE_URL");
+    let api_key = env::var("SUPABASE_API_KEY").expect("Undefined env: SUPABASE_API_KEY");
+    let anon_key = env::var("SUPABASE_ANON_KEY").expect("Undefined env: SUPABASE_ANON_KEY");
+
+    AuthClient::new(url, api_key, anon_key)
 }
