@@ -39,6 +39,8 @@ mod error;
 mod handler;
 mod model;
 mod routes;
+
+mod repository;
 mod service;
 
 #[actix_web::main]
