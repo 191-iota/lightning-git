@@ -9,15 +9,46 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:lightningGit.signIn",
+    "onView:lightningGit.projectsView"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "hf-lightning-git-vsc.helloWorld",
-        "title": "Hello World"
+        "command": "lightningGit.signIn",
+        "title": "Lightning Git: Sign In"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Lightning Git",
+      "properties": {
+        "lightning-git.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8787",
+          "description": "Base URL for the lightning-git backend (no trailing slash)."
+        },
+        "lightning-git.supabaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Supabase project URL used for authentication."
+        },
+        "lightning-git.supabaseAnonKey": {
+          "type": "string",
+          "default": "",
+          "description": "Supabase anon key used for authentication."
+        }
+      }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "lightningGit.projectsView",
+          "name": "Lightning Git"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -27,14 +58,17 @@
     "lint": "eslint src",
     "test": "vscode-test"
   },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.8"
+  },
   "devDependencies": {
-    "@types/vscode": "^1.118.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "typescript-eslint": "^8.56.1",
+    "@types/vscode": "^1.118.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.3",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.56.1"
   }
 }

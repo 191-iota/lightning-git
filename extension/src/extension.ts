@@ -1,14 +1,30 @@
 import * as vscode from "vscode";
+import { AuthClient } from "./auth/authClient";
+import { getConfig } from "./util/config";
+import { createLogger } from "./util/logger";
 
 export function activate(context: vscode.ExtensionContext) {
-  // TODO: auth, views, and backend clients.
+  const log = createLogger();
+  context.subscriptions.push({ dispose: () => log.dispose() });
+
+  const config = getConfig();
+  const auth = new AuthClient(context, config, log);
+  context.subscriptions.push(auth);
+
   context.subscriptions.push(
     vscode.commands.registerCommand("lightningGit.signIn", async () => {
-      void vscode.window.showInformationMessage("Lightning Git: not wired up yet.");
+      if (!config.supabaseUrl || !config.supabaseAnonKey) {
+        void vscode.window.showErrorMessage(
+          "Set lightning-git.supabaseUrl and lightning-git.supabaseAnonKey first."
+        );
+        return;
+      }
+
+      await auth.signIn();
     })
   );
+
+  log.info("Lightning Git activated");
 }
 
-export function deactivate() {
-  // no-op
-}
+export function deactivate() {}
