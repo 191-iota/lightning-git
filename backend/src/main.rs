@@ -40,6 +40,7 @@ mod handler;
 mod model;
 mod routes;
 
+mod config;
 mod repository;
 mod service;
 
@@ -111,7 +112,8 @@ async fn main() -> std::io::Result<()> {
                     .max_age(3600),
             )
             .app_data(app_state.clone())
-            .configure(global_routes::init_routes)
+            .configure(global_routes::init_api_scope)
+            .configure(global_routes::init_anon_scope)
     })
     .bind(format!("{}:{}", address.0, address.1))?
     .run()
