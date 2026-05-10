@@ -17,12 +17,29 @@ use crate::handler::overlay_handler::__path_create_active_overlay;
 use crate::handler::overlay_handler::__path_get_overlay;
 use crate::handler::overlay_ws::__path_ws_overlay_stream;
 use crate::handler::project_handler::__path_create_project;
+use crate::handler::project_handler::__path_delete_project;
+use crate::handler::project_handler::__path_get_project;
 use crate::handler::project_handler::__path_get_project_file;
+use crate::handler::project_handler::__path_get_project_members;
+use crate::handler::project_handler::__path_update_project;
+
+use crate::handler::user_handler::__path_get_user_id_by_username;
+use crate::handler::user_handler::__path_login;
+use crate::handler::user_handler::__path_register;
 use crate::model::overlay::Conflict;
 use crate::model::overlay::OverlayViewRes;
 use crate::model::project::CreateProjectReq;
 use crate::model::project::CreateProjectRes;
 use crate::model::project::FileReadReq;
+
+use crate::model::project::DeleteProjectReq;
+use crate::model::project::ProjectMemberRes;
+use crate::model::project::ProjectRes;
+use crate::model::project::UpdateProjectReq;
+use crate::model::user::LoginPayload;
+use crate::model::user::RegisterPayload;
+use crate::model::user::UserSearchEntryRes;
+
 use actix_web::App;
 use actix_web::HttpServer;
 use actix_web::middleware::Logger;
@@ -43,6 +60,7 @@ mod routes;
 mod config;
 mod repository;
 mod service;
+mod macros;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -70,27 +88,43 @@ async fn main() -> std::io::Result<()> {
         paths(
             health_check,
             create_project,
+            get_project,
+            delete_project,
+            update_project,
             get_project_file,
+            get_project_members,
             get_overlay,
             create_active_overlay,
-            ws_overlay_stream,
             get_merge_conflicts,
+            ws_overlay_stream,
+            register,
+            login,
+            get_user_id_by_username,
         ),
         components(
             schemas(
                 CreateProjectReq,
                 CreateProjectRes,
+                ProjectRes,
+                UpdateProjectReq,
+                DeleteProjectReq,
+                ProjectMemberRes,
                 FileReadReq,
                 OverlayViewRes,
                 Conflict,
+                LoginPayload,
+                RegisterPayload,
+                UserSearchEntryRes,
             ),
         ),
         security(( "Authorization" = [] )),
         modifiers(&SecuritySchemas),
         tags(
             (name = "project", description = "Project endpoints"),
+            (name = "user", description = "User endpoints"),
             (name = "overlay", description = "Overlay endpoints"),
             (name = "merge", description = "Merge endpoints"),
+            (name = "task", description = "Task endpoints"),
             (name = "config", description = "Config endpoints"),
         )
     )]

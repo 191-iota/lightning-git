@@ -9,7 +9,11 @@ use crate::handler::overlay_handler::create_active_overlay;
 use crate::handler::overlay_handler::get_overlay;
 use crate::handler::overlay_ws::ws_overlay_stream;
 use crate::handler::project_handler::create_project;
+use crate::handler::project_handler::delete_project;
+use crate::handler::project_handler::get_project;
 use crate::handler::project_handler::get_project_file;
+use crate::handler::project_handler::get_project_members;
+use crate::handler::project_handler::update_project;
 use crate::handler::user_handler::get_user_id_by_username;
 use crate::handler::user_handler::github_auth;
 use crate::handler::user_handler::github_callback;
@@ -29,7 +33,11 @@ pub fn init_api_scope(cfg: &mut web::ServiceConfig) {
         web::scope("/api")
             .wrap(from_fn(auth_filter))
             .route("/projects", web::post().to(create_project))
+            .route("/projects/{id}", web::put().to(update_project))
+            .route("/projects/{id}", web::delete().to(delete_project))
+            .route("/projects/{id}", web::get().to(get_project))
             .route("/projects/{id}/file", web::post().to(get_project_file))
+            .route("/projects/{id}/members", web::get().to(get_project_members))
             .route(
                 "/overlay/ws/{project_id}/{user_id}/{file_name:.*}",
                 web::get().to(ws_overlay_stream),
