@@ -4,12 +4,12 @@
   "description": "",
   "version": "0.0.1",
   "engines": {
-    "vscode": "^1.118.0"
+  "vscode": "^1.105.0"
   },
   "categories": [
     "Other"
   ],
-  "main": "./out/extension.js",
+ "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
@@ -19,6 +19,18 @@
       {
         "command": "lightningGit.signOut",
         "title": "Lightning Git: Sign Out"
+      },
+      {
+        "command": "lightningGit.addProject",
+        "title": "Lightning Git: Add Project"
+      },
+      {
+        "command": "lightningGit.openProject",
+        "title": "Lightning Git: Open Project"
+      },
+      {
+        "command": "lightningGit.refreshProjects",
+        "title": "Lightning Git: Refresh Projects"
       }
     ],
     "configuration": {
@@ -41,11 +53,41 @@
         }
       }
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "lightningGit",
+          "title": "Lightning Git",
+          "icon": "$(zap)"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "lightningGit": [
         {
           "id": "lightningGit.projectsView",
-          "name": "Lightning Git"
+          "name": "Projects"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "lightningGit.addProject",
+          "when": "view == lightningGit.projectsView",
+          "group": "navigation"
+        },
+        {
+          "command": "lightningGit.refreshProjects",
+          "when": "view == lightningGit.projectsView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "lightningGit.openProject",
+          "when": "view == lightningGit.projectsView",
+          "group": "inline"
         }
       ]
     }
