@@ -1,5 +1,8 @@
+use actix_web::body::MessageBody;
+use actix_web::error::ErrorUnauthorized;
 use actix_web::web;
 
+use crate::config::middleware;
 use crate::handler::config_handler::health_check;
 use crate::handler::merge_handler::get_merge_conflicts;
 use crate::handler::overlay_handler::create_active_overlay;
@@ -7,16 +10,26 @@ use crate::handler::overlay_handler::get_overlay;
 use crate::handler::overlay_ws::ws_overlay_stream;
 use crate::handler::project_handler::create_project;
 use crate::handler::project_handler::get_project_file;
+use crate::handler::user_handler::get_user_id_by_username;
+use crate::handler::user_handler::github_auth;
+use crate::handler::user_handler::github_callback;
+use crate::handler::user_handler::login;
+use crate::handler::user_handler::register;
+use crate::model::user::MiddlewareData;
+use actix_web::Error;
+use actix_web::HttpMessage;
+use actix_web::dev::{ServiceRequest, ServiceResponse};
+use actix_web::middleware::Next;
+use actix_web::middleware::from_fn;
+use log::error;
 
-// Routes starting with "/api" (auth middleware will be added in a later checkpoint)
-pub fn init_routes(cfg: &mut web::ServiceConfig) {
+// Routes starting with "/api", which also are protected by the middleware
+pub fn init_api_scope(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api")
+            .wrap(from_fn(auth_filter))
             .route("/projects", web::post().to(create_project))
-            .route(
-                "/projects/{id}/{branch}/file",
-                web::post().to(get_project_file),
-            )
+            .route("/projects/{id}/file", web::post().to(get_project_file))
             .route(
                 "/overlay/ws/{project_id}/{user_id}/{file_name:.*}",
                 web::get().to(ws_overlay_stream),
@@ -32,7 +45,47 @@ pub fn init_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/merge/{project_id}/{file_name:.*}",
                 web::get().to(get_merge_conflicts),
-            ),
-    )
-    .service(web::scope("").route("/health", web::get().to(health_check)));
+            )
+            .route("/user/{username}", web::get().to(get_user_id_by_username)),
+    );
+}
+
+// Unprotected routes
+pub fn init_anon_scope(cfg: &mut web::ServiceConfig) {
+    cfg.service(
+        web::scope("")
+            .route("/auth/github/callback", web::get().to(github_callback))
+            .route("/auth/github/{user_id}", web::get().to(github_auth))
+            .route("/health", web::get().to(health_check))
+            .route("/register", web::post().to(register))
+            // TODO: implement a HTTP only cookie
+            .route("/login", web::post().to(login)),
+    );
+}
+async fn auth_filter(
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, Error> {
+    let maybe_token = req
+        .headers()
+        .get("Authorization")
+        .map(|x| x.to_str().unwrap().to_string())
+        .or_else(|| {
+            req.query_string()
+                .split('&')
+                .find_map(|p| p.strip_prefix("token="))
+                .map(|s| format!("Bearer {}", s))
+        });
+
+    match middleware::validate_jwt(maybe_token).await {
+        Ok(user_id) => {
+            // Insert the user_id from the JWT-Token into ReqData
+            req.extensions_mut().insert(MiddlewareData { user_id });
+            next.call(req).await
+        }
+        Err(e) => {
+            error!("Authorization failed: {e}");
+            Err(ErrorUnauthorized("Authorization failed."))
+        }
+    }
 }
