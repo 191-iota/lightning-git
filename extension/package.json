@@ -9,16 +9,16 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onCommand:lightningGit.signIn",
-    "onView:lightningGit.projectsView"
-  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "lightningGit.signIn",
         "title": "Lightning Git: Sign In"
+      },
+      {
+        "command": "lightningGit.signOut",
+        "title": "Lightning Git: Sign Out"
       }
     ],
     "configuration": {
