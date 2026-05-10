@@ -6,6 +6,7 @@ import { SecretsStorage } from "./secretsStorage";
 
 export type AuthState =
   | { kind: "signedOut" }
+  | { kind: "refreshing" }
   | { kind: "signedIn"; session: Session };
 
 export class AuthClient implements vscode.Disposable {
@@ -58,16 +59,22 @@ export class AuthClient implements vscode.Disposable {
   }
 
   async restoreSession(): Promise<void> {
+    this.#setState({ kind: "refreshing" });
+
     const { data, error } = await this.#supabase.auth.getSession();
 
     if (error) {
       this.#log.warn(`restoreSession failed: ${error.message}`);
+      this.#setState({ kind: "signedOut" });
       return;
     }
 
     if (data.session) {
       this.#setState({ kind: "signedIn", session: data.session });
+      return;
     }
+
+    this.#setState({ kind: "signedOut" });
   }
 
   async getAccessToken(): Promise<string | null> {
@@ -93,6 +100,8 @@ export class AuthClient implements vscode.Disposable {
       return;
     }
 
+    this.#setState({ kind: "refreshing" });
+
     const { data, error } = await this.#supabase.auth.setSession({
       access_token: token,
       refresh_token: token
@@ -100,6 +109,7 @@ export class AuthClient implements vscode.Disposable {
 
     if (error) {
       this.#log.error(`signIn failed: ${error.message}`);
+      this.#setState({ kind: "signedOut" });
       void vscode.window.showErrorMessage(`Lightning Git sign-in failed: ${error.message}`);
       return;
     }
@@ -110,10 +120,13 @@ export class AuthClient implements vscode.Disposable {
       return;
     }
 
+    this.#setState({ kind: "signedOut" });
     void vscode.window.showWarningMessage("Lightning Git: sign-in produced no session.");
   }
 
   async signOut(): Promise<void> {
+    this.#setState({ kind: "refreshing" });
+
     const { error } = await this.#supabase.auth.signOut();
 
     if (error) {
