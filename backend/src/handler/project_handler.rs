@@ -1,10 +1,16 @@
+use crate::macros::macros::require_project_permission;
 use crate::model::app_state::AppState;
 use crate::model::project::CreateProjectReq;
 use crate::model::project::CreateProjectRes;
+use crate::model::project::DeleteProjectReq;
 use crate::model::project::FileReadReq;
+use crate::model::project::UpdateProjectReq;
 use crate::model::user::MiddlewareData;
 use crate::repository::project_repository;
+use crate::repository::user_repository;
 use crate::service::git_service;
+use crate::service::project_service;
+use crate::service::project_service::inject_token;
 use actix_web::HttpResponse;
 use actix_web::http::header::CONTENT_TYPE;
 use actix_web::web;
@@ -33,16 +39,22 @@ pub async fn create_project(
 
     let proj_id = Uuid::new_v4();
     let repo_path = state.repo_loc.join(proj_id.to_string());
-    let req = req.into_inner();
 
-    if let Err(e) = git_service::clone_repo(&req.repo_url, &repo_path).await {
+    // If the repository is private, the access token will be fetched from the db
+    let clone_url =
+        match user_repository::get_access_token(&state.sb_client, &ext_data.user_id).await {
+            Ok(Some(token)) => inject_token(&req.repo_url, &token),
+            _ => req.repo_url.clone(),
+        };
+
+    if let Err(e) = git_service::clone_repo(&clone_url, &repo_path).await {
         error!(
-            "git_clone_repo failed (proj, src {}): {e}",
-            &repo_path.to_string_lossy());
-
+            "git_clone_repo failed (proj {proj_id}, src {}): {e}",
+            &req.repo_url
+        );
         return HttpResponse::BadRequest().body(format!(
             "Failed cloning project {}, consider checking permissions.",
-            &req.repo_url.clone(),
+            &req.repo_url,
         ));
     }
 
@@ -68,12 +80,138 @@ pub async fn create_project(
     }
 
     HttpResponse::Ok().json(CreateProjectRes { proj_id })
+}
 
+#[utoipa::path(
+    get,
+    path = "/api/projects/{id}/members",
+    params(
+        ("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+    ),
+    tag = "project",
+)]
+pub async fn get_project_members(
+    state: web::Data<AppState>,
+    path: web::Path<Uuid>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    let proj_id = path.into_inner();
+
+    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+
+    let res = project_repository::get_project_members_full(&state.sb_client, &proj_id).await;
+    match res {
+        Ok(members) => HttpResponse::Ok().json(members),
+        Err(e) => {
+            error!("Failed getting project members: {e}");
+            HttpResponse::BadRequest().body("Failed processing request")
+        }
+    }
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/projects/{id}",
+    params(
+        ("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+    ),
+    request_body = UpdateProjectReq,
+    tag = "project",
+)]
+pub async fn update_project(
+    state: web::Data<AppState>,
+    path: web::Path<Uuid>,
+    req: web::Json<UpdateProjectReq>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    if let Err(e) = req.validate() {
+        return HttpResponse::BadRequest().json(e);
+    }
+    if let Err(e) = req.validate() {
+        return HttpResponse::BadRequest().json(e);
+    }
+    let proj_id = path.into_inner();
+
+    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+
+    let res =
+        project_repository::update_project(&state.sb_client, &proj_id, req.into_inner()).await;
+    match res {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(e) => {
+            error!("Failed updating project: {e}");
+            HttpResponse::BadRequest().body("Failed processing request")
+        }
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/projects/{id}",
+    params(
+        ("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+    ),
+    tag = "project",
+)]
+pub async fn delete_project(
+    state: web::Data<AppState>,
+    req: web::Json<DeleteProjectReq>,
+    path: web::Path<Uuid>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    let req = req.into_inner();
+    let proj_id = path.into_inner();
+
+    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+    // TODO: run additional security checks (access based)
+    let dest_path = state.repo_loc.join(req.id.to_string());
+
+    // TODO: what happens when one fails and one passes ?
+    if let Err(e) = git_service::delete_repo(&dest_path).await {
+        error!("Failed deleting repository for {}: {e}", req.id);
+        return HttpResponse::BadRequest()
+            .content_type("text/plain; charset=utf-8")
+            .body("Unable to delete repo");
+    }
+
+    let res = project_repository::delete_project(&state.sb_client, proj_id.to_string()).await;
+    match res {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(_e) => HttpResponse::BadRequest().body("Failed deleting project"),
+    }
+}
+
+// TODO: Create another endpoint (after implementing Joins in repo) which returns Project with its
+// tasks -> It will be required to always respond with a response object instead of "Value"
+#[utoipa::path(
+    get,
+    path = "/api/projects/{id}",
+    params(
+        ("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+    ),
+    tag = "project",
+)]
+pub async fn get_project(
+    state: web::Data<AppState>,
+    path: web::Path<Uuid>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    let proj_id = path.into_inner();
+
+    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+    let res = project_repository::find_project_by_id(&state.sb_client, proj_id.to_string()).await;
+
+
+    match res {
+        Ok(v) => HttpResponse::Ok().json(v),
+        // TODO: handle error properly
+        Err(e) => HttpResponse::BadRequest().body(format!("Failed getting project {e}")),
+    }
 }
 
 #[utoipa::path(
     post,
-    path = "/api/projects/{id}/{branch}/file",
+    path = "/api/projects/{id}/file",
     params(
         ("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
     ),
@@ -87,32 +225,10 @@ pub async fn get_project_file(
     req: web::Json<FileReadReq>,
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
-    
-
-    match crate::service::permission_service::check_repo_permission(
-    &state.sb_client,
-    &path.0,
-    &ext_data.user_id,
-    )
-    .await
-    {
-        Ok(true) => {}
-        Ok(false) => {
-            log::error!(
-                "Unauthorized user tried accessing a project: user_id: {}, project_id: {}",
-                ext_data.user_id,
-                path.0
-            );
-            return HttpResponse::Unauthorized().finish();
-        }
-        Err(e) => {
-            log::error!("Permission check failed: {e}");
-            return HttpResponse::InternalServerError().finish();
-        }
-    }
     let path = path.into_inner();
     let proj_id = path.0;
     let branch = path.1;
+    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
     // Explicitly using fully qualified name (std::...) to avoid conflict with web::Path
     let content = git_service::read_file(
         std::path::Path::new(&state.repo_loc.join(proj_id.to_string())),
