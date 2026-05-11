@@ -281,14 +281,27 @@ export function deactivate(): void {}
 
 function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
     const responseData = error.response?.data;
 
     if (typeof responseData === "string") {
       return responseData;
     }
 
-    if (responseData && typeof responseData === "object" && "message" in responseData) {
-      return String(responseData.message);
+    if (responseData && typeof responseData === "object") {
+      if ("error" in responseData && responseData.error) {
+        return String(responseData.error);
+      }
+
+      try {
+        return JSON.stringify(responseData);
+      } catch {
+        return status ? `Request failed with status ${status}` : error.message;
+      }
+    }
+
+    if (status) {
+      return `Request failed with status ${status}: ${error.message}`;
     }
 
     return error.message;
