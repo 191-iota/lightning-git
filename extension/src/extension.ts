@@ -1,91 +1,179 @@
 import * as vscode from "vscode";
-import { AuthClient } from "./auth/authClient";
-import { bindAuthStatusBar } from "./auth/statusBar";
-import { getConfig } from "./util/config";
-import { createLogger } from "./util/logger";
-import { registerProjectsView, type SavedProject } from "./views/projectsProvider";
+import axios from "axios";
+import { AuthManager } from "./auth";
+import { LightningGitClient } from "./client";
 
-export function activate(context: vscode.ExtensionContext) {
-  const log = createLogger();
-  context.subscriptions.push({ dispose: () => log.dispose() });
+let authManager: AuthManager;
+let client: LightningGitClient;
 
-  const config = getConfig();
-  const auth = new AuthClient(context, config, log);
-  context.subscriptions.push(auth);
+export function activate(context: vscode.ExtensionContext): void {
+  console.log("Lightning Git extension is now active!");
 
-  context.subscriptions.push(bindAuthStatusBar(auth));
+  const config = vscode.workspace.getConfiguration("lightningGit");
+  const apiUrl = config.get<string>("apiUrl", "http://localhost:8080");
 
-  const { provider, disposable } = registerProjectsView(context);
-  context.subscriptions.push(disposable);
+  authManager = new AuthManager(context, apiUrl);
+  client = new LightningGitClient(apiUrl, authManager);
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("lightningGit.signIn", async () => {
-      if (!config.supabaseUrl || !config.supabaseAnonKey) {
-        void vscode.window.showErrorMessage(
-          "Set lightning-git.supabaseUrl and lightning-git.supabaseAnonKey first."
-        );
-        return;
-      }
+  async function ensureLoggedIn(): Promise<boolean> {
+    if (await authManager.isLoggedIn()) {
+      return true;
+    }
 
-      await auth.signIn();
-    })
-  );
+    const email = await vscode.window.showInputBox({
+      prompt: "Enter your email",
+      placeHolder: "user@example.com",
+      value: authManager.getEmail() ?? "",
+      ignoreFocusOut: true,
+    });
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("lightningGit.signOut", async () => {
-      await auth.signOut();
-      void vscode.window.showInformationMessage("Lightning Git: signed out.");
-    })
-  );
+    if (!email) {
+      return false;
+    }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("lightningGit.addProject", async () => {
-      // TODO: replace with GET /api/projects when backend ships it.
-      await provider.addProject();
-    })
-  );
+    const password = await vscode.window.showInputBox({
+      prompt: "Enter your password",
+      password: true,
+      ignoreFocusOut: true,
+    });
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("lightningGit.openProject", async (project?: SavedProject) => {
-      if (!project) {
-        const projects = await provider.getProjects();
+    if (!password) {
+      return false;
+    }
 
-        if (projects.length === 0) {
-          void vscode.window.showWarningMessage("No Lightning Git projects saved yet.");
-          return;
-        }
+    const username = await vscode.window.showInputBox({
+      prompt: "Enter your GitHub username",
+      placeHolder: "octocat",
+      value: authManager.getUsername() ?? "",
+      ignoreFocusOut: true,
+    });
 
-        const picked = await vscode.window.showQuickPick(
-          projects.map((item) => ({
-            label: item.label,
-            description: item.id,
-            project: item
-          })),
-          {
-            title: "Lightning Git: Open Project",
-            placeHolder: "Choose a saved project"
-          }
-        );
+    if (!username) {
+      return false;
+    }
 
-        if (!picked) {
-          return;
-        }
+    try {
+      await authManager.login(email, password, username);
+      void vscode.window.showInformationMessage(`Logged in as ${username}`);
+      return true;
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Login failed: ${getErrorMessage(error)}`);
+      return false;
+    }
+  }
 
-        await provider.openProject(picked.project);
-        return;
-      }
+  async function runCreateProject(): Promise<string | undefined> {
+    const repoUrl = await vscode.window.showInputBox({
+      prompt: "Enter the Git repository URL",
+      placeHolder: "https://github.com/owner/repo.git",
+      ignoreFocusOut: true,
+    });
 
-      await provider.openProject(project);
-    })
-  );
+    if (!repoUrl) {
+      return undefined;
+    }
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("lightningGit.refreshProjects", () => {
-      provider.refresh();
-    })
-  );
+    const name = await vscode.window.showInputBox({
+      prompt: "Enter a project name",
+      placeHolder: "My Project",
+      ignoreFocusOut: true,
+    });
 
-  log.info("Lightning Git activated");
+    if (!name) {
+      return undefined;
+    }
+
+    try {
+      const projectId = await client.createProject(repoUrl, name);
+      await context.globalState.update("lightningGit.lastProjectId", projectId);
+
+      void vscode.window.showInformationMessage(`Project "${name}" created! ID: ${projectId}`);
+      return projectId;
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to create project: ${getErrorMessage(error)}`);
+      return undefined;
+    }
+  }
+
+  const registerCommand = vscode.commands.registerCommand("lightning-git.register", async () => {
+    const email = await vscode.window.showInputBox({
+      prompt: "Enter your email",
+      placeHolder: "user@example.com",
+      ignoreFocusOut: true,
+    });
+
+    if (!email) {
+      return;
+    }
+
+    const password = await vscode.window.showInputBox({
+      prompt: "Enter your password",
+      password: true,
+      ignoreFocusOut: true,
+    });
+
+    if (!password) {
+      return;
+    }
+
+    const username = await vscode.window.showInputBox({
+      prompt: "Enter your GitHub username",
+      placeHolder: "octocat",
+      ignoreFocusOut: true,
+    });
+
+    if (!username) {
+      return;
+    }
+
+    try {
+      await authManager.register(email, password, username);
+      void vscode.window.showInformationMessage("Registration successful! You can now login.");
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Registration failed: ${getErrorMessage(error)}`);
+    }
+  });
+
+  const loginCommand = vscode.commands.registerCommand("lightning-git.login", async () => {
+    await ensureLoggedIn();
+  });
+
+  const logoutCommand = vscode.commands.registerCommand("lightning-git.logout", async () => {
+    await authManager.logout();
+    void vscode.window.showInformationMessage("Logged out successfully.");
+  });
+
+  const createProjectCommand = vscode.commands.registerCommand("lightning-git.createProject", async () => {
+    if (!(await ensureLoggedIn())) {
+      return;
+    }
+
+    await runCreateProject();
+  });
+
+  context.subscriptions.push(registerCommand, loginCommand, logoutCommand, createProjectCommand);
 }
 
-export function deactivate() {}
+export function deactivate(): void {}
+
+function getErrorMessage(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const responseData = error.response?.data;
+
+    if (typeof responseData === "string") {
+      return responseData;
+    }
+
+    if (responseData && typeof responseData === "object" && "message" in responseData) {
+      return String(responseData.message);
+    }
+
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}

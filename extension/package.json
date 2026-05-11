@@ -1,114 +1,58 @@
 {
   "name": "hf-lightning-git-vsc",
-  "displayName": "hf-lightning-git-vsc",
-  "description": "",
+  "displayName": "Lightning Git",
+  "description": "VSCode extension for lightning-git",
   "version": "0.0.1",
   "engines": {
-    "vscode": "^1.116.0"
+    "vscode": "^1.74.0"
   },
   "categories": [
     "Other"
   ],
- "main": "./out/extension.js",
+  "activationEvents": [],
+  "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "lightningGit.signIn",
-        "title": "Lightning Git: Sign In"
+        "command": "lightning-git.register",
+        "title": "Lightning Git: Register"
       },
       {
-        "command": "lightningGit.signOut",
-        "title": "Lightning Git: Sign Out"
+        "command": "lightning-git.login",
+        "title": "Lightning Git: Login"
       },
       {
-        "command": "lightningGit.addProject",
-        "title": "Lightning Git: Add Project"
+        "command": "lightning-git.logout",
+        "title": "Lightning Git: Logout"
       },
       {
-        "command": "lightningGit.openProject",
-        "title": "Lightning Git: Open Project"
-      },
-      {
-        "command": "lightningGit.refreshProjects",
-        "title": "Lightning Git: Refresh Projects"
+        "command": "lightning-git.createProject",
+        "title": "Lightning Git: Create Project"
       }
     ],
     "configuration": {
       "title": "Lightning Git",
       "properties": {
-        "lightning-git.backendUrl": {
+        "lightningGit.apiUrl": {
           "type": "string",
-          "default": "http://127.0.0.1:8787",
-          "description": "Base URL for the lightning-git backend (no trailing slash)."
-        },
-        "lightning-git.supabaseUrl": {
-          "type": "string",
-          "default": "",
-          "description": "Supabase project URL used for authentication."
-        },
-        "lightning-git.supabaseAnonKey": {
-          "type": "string",
-          "default": "",
-          "description": "Supabase anon key used for authentication."
+          "default": "http://localhost:8080",
+          "description": "Backend API endpoint"
         }
       }
-    },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "lightningGit",
-          "title": "Lightning Git",
-          "icon": "$(zap)"
-        }
-      ]
-    },
-    "views": {
-      "lightningGit": [
-        {
-          "id": "lightningGit.projectsView",
-          "name": "Projects"
-        }
-      ]
-    },
-    "menus": {
-      "view/title": [
-        {
-          "command": "lightningGit.addProject",
-          "when": "view == lightningGit.projectsView",
-          "group": "navigation"
-        },
-        {
-          "command": "lightningGit.refreshProjects",
-          "when": "view == lightningGit.projectsView",
-          "group": "navigation"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "lightningGit.openProject",
-          "when": "view == lightningGit.projectsView",
-          "group": "inline"
-        }
-      ]
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src",
-    "test": "vscode-test"
+    "lint": "eslint src"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.8"
+    "axios": "^1.13.2"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "@types/vscode": "^1.118.0",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2",
+    "@types/vscode": "^1.74.0",
     "eslint": "^9.39.3",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1"
