@@ -28,6 +28,18 @@
       {
         "command": "lightning-git.createProject",
         "title": "Lightning Git: Create Project"
+      },
+      {
+        "command": "lightning-git.connectGithub",
+        "title": "Lightning Git: Connect GitHub"
+      },
+      {
+        "command": "lightning-git.viewProjectMembers",
+        "title": "Lightning Git: View Project Members"
+      },
+      {
+        "command": "lightning-git.addProjectMember",
+        "title": "Lightning Git: Add Project Member"
       }
     ],
     "configuration": {
