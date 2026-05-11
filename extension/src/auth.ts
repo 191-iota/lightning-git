@@ -29,11 +29,10 @@ export class AuthManager {
     });
   }
 
-  async login(email: string, password: string, username: string): Promise<string> {
+  async login(email: string, password: string): Promise<string> {
     const response = await this.http.post("/login", {
       email,
       password,
-      username,
     });
 
     const accessToken = response.data.access_token as string;
@@ -42,7 +41,6 @@ export class AuthManager {
     await this.context.secrets.store(AuthManager.TOKEN_KEY, accessToken);
     await this.context.globalState.update(AuthManager.EMAIL_KEY, email);
     await this.context.globalState.update(AuthManager.USER_ID_KEY, userId);
-    await this.context.globalState.update(AuthManager.USERNAME_KEY, username);
 
     return accessToken;
   }
