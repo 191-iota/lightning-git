@@ -11,11 +11,25 @@ export interface LightningGitProject {
   name: string;
 }
 
+export interface ConflictHunk {
+  branch: string;
+  base_start: number;
+  base_end: number;
+  content: string[];
+}
+
+export interface MergeConflict {
+  base_start: number;
+  base_end: number;
+  hunks: ConflictHunk[];
+}
+
 export class LightningGitClient {
   private readonly http: AxiosInstance;
 
   constructor(
     apiUrl: string,
+    private readonly wsUrl: string,
     private readonly authManager: AuthManager,
   ) {
     this.http = axios.create({
@@ -60,5 +74,38 @@ export class LightningGitClient {
       name,
       user_ids: userIds,
     });
+  }
+
+  async createOverlay(projectId: string, userId: string, branch: string, fileName: string): Promise<void> {
+    try {
+      await this.http.put(`/api/overlay/${projectId}/${userId}/${encodeURIComponent(fileName)}/${branch}`);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 400) {
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  async getOverlayWsUrl(projectId: string, userId: string, fileName: string): Promise<string> {
+    const token = await this.authManager.getToken();
+    const baseUrl = `${this.wsUrl}/api/overlay/ws/${projectId}/${userId}/${encodeURIComponent(fileName)}`;
+
+    return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+  }
+
+  async getMergeConflicts(projectId: string, userId: string, fileName: string): Promise<MergeConflict[]> {
+    try {
+      const response = await this.http.get(`/api/merge/${projectId}/${encodeURIComponent(fileName)}`, {
+        params: {
+          user_id: userId,
+        },
+      });
+
+      return response.data as MergeConflict[];
+    } catch {
+      return [];
+    }
   }
 }

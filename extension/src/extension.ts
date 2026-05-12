@@ -11,9 +11,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const config = vscode.workspace.getConfiguration("lightningGit");
   const apiUrl = config.get<string>("apiUrl", "http://localhost:8080");
+  const wsUrl = config.get<string>("wsUrl", "ws://localhost:8080");
 
   authManager = new AuthManager(context, apiUrl);
-  client = new LightningGitClient(apiUrl, authManager);
+  client = new LightningGitClient(apiUrl, wsUrl, authManager);
 
   async function ensureLoggedIn(): Promise<boolean> {
     if (await authManager.isLoggedIn()) {
@@ -284,8 +285,8 @@ function getErrorMessage(error: unknown): string {
     const status = error.response?.status;
     const responseData = error.response?.data;
 
-    if (typeof responseData === "string") {
-      return responseData;
+    if (typeof responseData === "string" && responseData.trim()) {
+      return responseData.trim();
     }
 
     if (responseData && typeof responseData === "object") {
