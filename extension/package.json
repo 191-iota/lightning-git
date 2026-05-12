@@ -49,6 +49,11 @@
           "type": "string",
           "default": "http://localhost:8080",
           "description": "Backend API endpoint"
+        },
+        "lightningGit.wsUrl": {
+          "type": "string",
+          "default": "ws://localhost:8080",
+          "description": "WebSocket server URL"
         }
       }
     }
