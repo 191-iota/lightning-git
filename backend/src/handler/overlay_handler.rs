@@ -1,5 +1,7 @@
+use crate::macros::macros::require_project_permission;
 use crate::model::app_state::AppState;
 use crate::model::overlay::extract_overlay;
+use crate::model::user::MiddlewareData;
 use crate::service::git_service;
 use crate::service::overlay_service;
 use actix_web::HttpResponse;
@@ -18,8 +20,10 @@ use uuid::Uuid;
 pub async fn get_overlay(
     state: web::Data<AppState>,
     path: web::Path<(Uuid, Uuid, String)>,
+    ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
     let (proj_id, user_id, file_name) = path.into_inner();
+    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
 
     // check if the project even exists before trying anything
     let Some(proj) = state.repo_states.get(&proj_id) else {
@@ -46,6 +50,7 @@ pub async fn get_overlay(
 )]
 pub async fn create_active_overlay(
     state: web::Data<AppState>,
+    ext_data: web::ReqData<MiddlewareData>,
     // <(proj_id, user_id, file_name, branch)>
     path: web::Path<(Uuid, Uuid, String, String)>,
 ) -> HttpResponse {
@@ -56,8 +61,8 @@ pub async fn create_active_overlay(
     let file_name = path.2;
     let branch = path.3;
 
+    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
     // TODO: This should only create an overlay if the overlay for a file is not active
-
     let content = git_service::read_file(
         std::path::Path::new(&state.repo_loc.join(proj_id.to_string())),
         branch.as_str(),
