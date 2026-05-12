@@ -14,6 +14,8 @@ use crate::handler::project_handler::get_project;
 use crate::handler::project_handler::get_project_file;
 use crate::handler::project_handler::get_project_members;
 use crate::handler::project_handler::update_project;
+use crate::handler::task_handler::get_project_tasks;
+use crate::handler::task_handler::get_task;
 use crate::handler::user_handler::get_user_id_by_username;
 use crate::handler::user_handler::github_auth;
 use crate::handler::user_handler::github_callback;
@@ -32,6 +34,8 @@ pub fn init_api_scope(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api")
             .wrap(from_fn(auth_filter))
+            .route("/tasks/project/{proj_id}", web::get().to(get_project_tasks))
+            .route("/tasks/{id}/{proj_id}", web::get().to(get_task))
             .route("/projects", web::post().to(create_project))
             .route("/projects/{id}", web::put().to(update_project))
             .route("/projects/{id}", web::delete().to(delete_project))

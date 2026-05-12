@@ -79,6 +79,15 @@ pub async fn create_project(
         return HttpResponse::BadRequest().body("Failed processing request");
     }
 
+    if req.create_tasks_retroactively {
+        if let Err(e) = project_service::detect_and_create_tasks(&repo_path, &state.sb_client).await
+        {
+            error!("Failed creating project: {e}");
+            return HttpResponse::BadRequest().finish();
+        } else {
+            // TODO: remove all created tasks
+        }
+    }
     HttpResponse::Ok().json(CreateProjectRes { proj_id })
 }
 
@@ -201,6 +210,13 @@ pub async fn get_project(
     require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
     let res = project_repository::find_project_by_id(&state.sb_client, proj_id.to_string()).await;
 
+    let repo_path = state.repo_loc.join(proj_id.to_string());
+
+    // TODO: Should getting a project really fail when detecting and creating tasks fails?
+    if let Err(e) = project_service::detect_and_create_tasks(&repo_path, &state.sb_client).await {
+        error!("Task detection failed. proj_id : {}, error: {e}", proj_id);
+        return HttpResponse::BadRequest().body("Task detection failed");
+    }
 
     match res {
         Ok(v) => HttpResponse::Ok().json(v),

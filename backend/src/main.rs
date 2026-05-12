@@ -22,7 +22,8 @@ use crate::handler::project_handler::__path_get_project;
 use crate::handler::project_handler::__path_get_project_file;
 use crate::handler::project_handler::__path_get_project_members;
 use crate::handler::project_handler::__path_update_project;
-
+use crate::handler::task_handler::__path_get_project_tasks;
+use crate::handler::task_handler::__path_get_task;
 use crate::handler::user_handler::__path_get_user_id_by_username;
 use crate::handler::user_handler::__path_login;
 use crate::handler::user_handler::__path_register;
@@ -36,17 +37,19 @@ use crate::model::project::DeleteProjectReq;
 use crate::model::project::ProjectMemberRes;
 use crate::model::project::ProjectRes;
 use crate::model::project::UpdateProjectReq;
+use crate::model::task::TaskRes;
 use crate::model::user::LoginPayload;
 use crate::model::user::RegisterPayload;
 use crate::model::user::UserSearchEntryRes;
-
 use actix_web::App;
 use actix_web::HttpServer;
 use actix_web::middleware::Logger;
 use dotenv::dotenv;
 use env_logger::Env;
+use log::error;
 use log::info;
 use log::warn;
+use model::task_type::TaskType;
 use supabase_rs::SupabaseClient;
 use utoipa::Modify;
 use utoipa::OpenApi;
@@ -58,9 +61,9 @@ mod model;
 mod routes;
 
 mod config;
+mod macros;
 mod repository;
 mod service;
-mod macros;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -88,43 +91,48 @@ async fn main() -> std::io::Result<()> {
         paths(
             health_check,
             create_project,
-            get_project,
-            delete_project,
             update_project,
+            delete_project,
+            get_project,
+            get_task,
+            get_project_tasks,
             get_project_file,
             get_project_members,
+            register,
+            login,
             get_overlay,
             create_active_overlay,
             get_merge_conflicts,
             ws_overlay_stream,
-            register,
-            login,
             get_user_id_by_username,
         ),
         components(
             schemas(
+                TaskRes,
+                TaskType,
                 CreateProjectReq,
-                CreateProjectRes,
                 ProjectRes,
-                UpdateProjectReq,
-                DeleteProjectReq,
-                ProjectMemberRes,
                 FileReadReq,
-                OverlayViewRes,
-                Conflict,
+                DeleteProjectReq,
                 LoginPayload,
                 RegisterPayload,
+                OverlayViewRes,
+                UpdateProjectReq,
+                ProjectMemberRes,
+                Conflict,
                 UserSearchEntryRes,
+                CreateProjectRes,
             ),
         ),
+        modifiers(&UuidSchema),
         security(( "Authorization" = [] )),
         modifiers(&SecuritySchemas),
         tags(
             (name = "project", description = "Project endpoints"),
             (name = "user", description = "User endpoints"),
             (name = "overlay", description = "Overlay endpoints"),
-            (name = "merge", description = "Merge endpoints"),
             (name = "task", description = "Task endpoints"),
+            (name = "merge", description = "Merge endpoints"),
             (name = "config", description = "Config endpoints"),
         )
     )]

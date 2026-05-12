@@ -33,6 +33,7 @@ pub struct CreateProjectReq {
     #[validate(url)]
     pub repo_url: String,
     pub name: String,
+    pub create_tasks_retroactively: bool,
 }
 
 #[derive(Deserialize, ToSchema)]
