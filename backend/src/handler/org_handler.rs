@@ -47,6 +47,24 @@ pub async fn create_org(
 
 #[utoipa::path(
     get,
+    path = "/api/orgs/mine",
+    tag = "org",
+)]
+pub async fn list_my_orgs(
+    state: web::Data<AppState>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    match org_repository::list_user_orgs(&state.sb_client, &ext_data.user_id).await {
+        Ok(orgs) => HttpResponse::Ok().json(orgs),
+        Err(e) => {
+            error!("Failed listing user orgs: {e}");
+            HttpResponse::BadRequest().body("Failed listing orgs")
+        }
+    }
+}
+
+#[utoipa::path(
+    get,
     path = "/api/orgs/{id}",
     params(("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")),
     tag = "org",
