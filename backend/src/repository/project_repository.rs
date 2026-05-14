@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::str::FromStr;
 
 use log::error;
 use serde_json::Value;
@@ -8,18 +9,19 @@ use uuid::Uuid;
 
 use crate::error::custom_errors::RepoError;
 use crate::model::project::ProjectMemberRes;
+use crate::model::project::ProjectRole;
 use crate::model::project::UpdateProjectReq;
 
-// Important: find a solution for not overbloating disk space with useless files
 // repo errors are currently redundantly handled for extensibility purposes
-// in order for repo methods to scale well, performing one calc per http call is important -> sql joins, orm,
+// for repo methods to scale well, one calc per http call is important -> sql joins, orm,
 // responseobjects in one method
 pub async fn save_project(
     db: &SupabaseClient,
     id: &Uuid,
     name: &str,
     repo_url: &str,
-    user_id: &Uuid,
+    org_id: &Uuid,
+    creator_id: &Uuid,
 ) -> Result<String, RepoError> {
     let db_result = db
         .insert(
@@ -27,7 +29,8 @@ pub async fn save_project(
             json!({
                 "id": id.to_string(),
                 "name": name,
-                "repo_url": repo_url
+                "repo_url": repo_url,
+                "org_id": org_id.to_string(),
             }),
         )
         .await;
@@ -35,7 +38,7 @@ pub async fn save_project(
         error!("Failed inserting project: {e}");
         RepoError::InsertionError(String::from("Failed inserting project"))
     })?;
-    add_user_to_project(db, id, user_id).await?;
+    add_user_to_project(db, id, creator_id, ProjectRole::Admin).await?;
     Ok(handled_result)
 }
 
@@ -62,7 +65,7 @@ pub async fn update_project(
 
     for user_id in update_req.user_ids {
         if !existing_ids.contains(&user_id.to_string()) {
-            add_user_to_project(db, id, &user_id).await?;
+            add_user_to_project(db, id, &user_id, ProjectRole::Member).await?;
         }
     }
     Ok(id.to_string())
@@ -94,10 +97,25 @@ pub async fn get_project_members_full(
     db: &SupabaseClient,
     project_id: &Uuid,
 ) -> Result<Vec<ProjectMemberRes>, RepoError> {
-    let member_ids = get_project_members_id(db, project_id).await?;
-    if member_ids.is_empty() {
+    let member_rows = db
+        .select("project_members")
+        .eq("project_id", project_id.to_string().as_str())
+        .columns(vec!["user_id", "role"])
+        .execute()
+        .await
+        .map_err(|e| {
+            error!("Failed fetching project members: {e}");
+            RepoError::ExtractionError(String::from("Failed fetching project members"))
+        })?;
+
+    if member_rows.is_empty() {
         return Ok(vec![]);
     }
+
+    let member_ids: Vec<String> = member_rows
+        .iter()
+        .filter_map(|m| m.get("user_id").and_then(|v| v.as_str()).map(String::from))
+        .collect();
 
     let users = db
         .select("profiles")
@@ -110,21 +128,44 @@ pub async fn get_project_members_full(
         .await
         .map_err(|e| RepoError::ExtractionError(e.to_string()))?;
 
-    serde_json::from_value(Value::Array(users))
-        .map_err(|e| RepoError::ExtractionError(e.to_string()))
+    let mut out: Vec<ProjectMemberRes> = Vec::with_capacity(member_rows.len());
+    for m in member_rows {
+        let uid_str = m.get("user_id").and_then(|v| v.as_str()).unwrap_or("");
+        let role_str = m.get("role").and_then(|v| v.as_str()).unwrap_or("member");
+        let id = match Uuid::parse_str(uid_str) {
+            Ok(u) => u,
+            Err(_) => continue,
+        };
+        let display_name = users
+            .iter()
+            .find(|p| p.get("id").and_then(|v| v.as_str()) == Some(uid_str))
+            .and_then(|p| p.get("display_name").and_then(|v| v.as_str()))
+            .unwrap_or("")
+            .to_string();
+        let role = ProjectRole::from_str(role_str).unwrap_or(ProjectRole::Member);
+
+        out.push(ProjectMemberRes {
+            id,
+            display_name,
+            role,
+        });
+    }
+    Ok(out)
 }
 
 pub async fn add_user_to_project(
     db: &SupabaseClient,
     id: &Uuid,
     user_id: &Uuid,
+    role: ProjectRole,
 ) -> Result<String, RepoError> {
     let db_result = db
         .insert(
             "project_members",
             json!({
                 "project_id": id.to_string().as_str(),
-                "user_id": user_id.to_string().as_str()
+                "user_id": user_id.to_string().as_str(),
+                "role": role.to_string(),
             }),
         )
         .await;
@@ -157,7 +198,6 @@ pub async fn find_project_by_id(client: &SupabaseClient, id: String) -> Result<V
         RepoError::ExtractionError(String::from("Failed retrieving project"))
     })?;
 
-    println!("test");
     Ok(handled_result[0].clone())
 }
 
@@ -177,8 +217,6 @@ pub async fn find_repo_url_by_id(client: &SupabaseClient, id: String) -> Result<
         ))
     })?;
 
-    // We need our singular result to move out of the vec
-    // We also need the literal value and not the json representation hence:
     let v = handled_result
         .first()
         .and_then(|val| val.get("repo_url"))

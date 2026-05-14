@@ -1,3 +1,5 @@
+use crate::macros::macros::require_org_permission;
+use crate::macros::macros::require_project_admin;
 use crate::macros::macros::require_project_permission;
 use crate::model::app_state::AppState;
 use crate::model::project::CreateProjectReq;
@@ -37,10 +39,12 @@ pub async fn create_project(
         return HttpResponse::BadRequest().json(e);
     }
 
+    // Caller must belong to the org they're creating the project under.
+    require_org_permission!(&state.sb_client, &req.org_id, &ext_data.user_id);
+
     let proj_id = Uuid::new_v4();
     let repo_path = state.repo_loc.join(proj_id.to_string());
 
-    // If the repository is private, the access token will be fetched from the db
     let clone_url =
         match user_repository::get_access_token(&state.sb_client, &ext_data.user_id).await {
             Ok(Some(token)) => inject_token(&req.repo_url, &token),
@@ -63,13 +67,13 @@ pub async fn create_project(
         &proj_id,
         &req.name,
         &req.repo_url,
+        &req.org_id,
         &ext_data.user_id,
     )
     .await;
 
     if let Err(e) = res {
         error!("Failed creating project: {e}");
-        // remove the cloned repo if db creation failed
         if let Err(cleanup_err) = tokio::fs::remove_dir_all(&repo_path).await {
             error!(
                 "Failed cleaning up repo at {}: {cleanup_err}",
@@ -84,8 +88,6 @@ pub async fn create_project(
         {
             error!("Failed creating project: {e}");
             return HttpResponse::BadRequest().finish();
-        } else {
-            // TODO: remove all created tasks
         }
     }
     HttpResponse::Ok().json(CreateProjectRes { proj_id })
@@ -136,12 +138,9 @@ pub async fn update_project(
     if let Err(e) = req.validate() {
         return HttpResponse::BadRequest().json(e);
     }
-    if let Err(e) = req.validate() {
-        return HttpResponse::BadRequest().json(e);
-    }
     let proj_id = path.into_inner();
 
-    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+    require_project_admin!(&state.sb_client, &proj_id, &ext_data.user_id);
 
     let res =
         project_repository::update_project(&state.sb_client, &proj_id, req.into_inner()).await;
@@ -171,8 +170,7 @@ pub async fn delete_project(
     let req = req.into_inner();
     let proj_id = path.into_inner();
 
-    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
-    // TODO: run additional security checks (access based)
+    require_project_admin!(&state.sb_client, &proj_id, &ext_data.user_id);
     let dest_path = state.repo_loc.join(req.id.to_string());
 
     // TODO: what happens when one fails and one passes ?
@@ -190,8 +188,6 @@ pub async fn delete_project(
     }
 }
 
-// TODO: Create another endpoint (after implementing Joins in repo) which returns Project with its
-// tasks -> It will be required to always respond with a response object instead of "Value"
 #[utoipa::path(
     get,
     path = "/api/projects/{id}",
@@ -220,7 +216,6 @@ pub async fn get_project(
 
     match res {
         Ok(v) => HttpResponse::Ok().json(v),
-        // TODO: handle error properly
         Err(e) => HttpResponse::BadRequest().body(format!("Failed getting project {e}")),
     }
 }
@@ -245,7 +240,6 @@ pub async fn get_project_file(
     let proj_id = path.0;
     let branch = path.1;
     require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
-    // Explicitly using fully qualified name (std::...) to avoid conflict with web::Path
     let content = git_service::read_file(
         std::path::Path::new(&state.repo_loc.join(proj_id.to_string())),
         branch.as_str(),

@@ -13,6 +13,14 @@ use self::model::overlay::ProjectLiveState;
 use self::routes::global_routes;
 use crate::handler::config_handler::__path_health_check;
 use crate::handler::merge_handler::__path_get_merge_conflicts;
+use crate::handler::org_handler::__path_add_org_member;
+use crate::handler::org_handler::__path_create_org;
+use crate::handler::org_handler::__path_delete_org;
+use crate::handler::org_handler::__path_get_org;
+use crate::handler::org_handler::__path_list_org_members;
+use crate::handler::org_handler::__path_list_org_projects;
+use crate::handler::org_handler::__path_remove_org_member;
+use crate::handler::org_handler::__path_update_org;
 use crate::handler::overlay_handler::__path_create_active_overlay;
 use crate::handler::overlay_handler::__path_get_overlay;
 use crate::handler::overlay_ws::__path_ws_overlay_stream;
@@ -27,6 +35,13 @@ use crate::handler::task_handler::__path_get_task;
 use crate::handler::user_handler::__path_get_user_id_by_username;
 use crate::handler::user_handler::__path_login;
 use crate::handler::user_handler::__path_register;
+use crate::model::org::AddOrgMemberReq;
+use crate::model::org::CreateOrgReq;
+use crate::model::org::CreateOrgRes;
+use crate::model::org::OrgMemberRes;
+use crate::model::org::OrgRes;
+use crate::model::org::OrgRole;
+use crate::model::org::UpdateOrgReq;
 use crate::model::overlay::Conflict;
 use crate::model::overlay::OverlayViewRes;
 use crate::model::project::CreateProjectReq;
@@ -36,6 +51,7 @@ use crate::model::project::FileReadReq;
 use crate::model::project::DeleteProjectReq;
 use crate::model::project::ProjectMemberRes;
 use crate::model::project::ProjectRes;
+use crate::model::project::ProjectRole;
 use crate::model::project::UpdateProjectReq;
 use crate::model::task::TaskRes;
 use crate::model::user::LoginPayload;
@@ -105,6 +121,14 @@ async fn main() -> std::io::Result<()> {
             get_merge_conflicts,
             ws_overlay_stream,
             get_user_id_by_username,
+            create_org,
+            get_org,
+            update_org,
+            delete_org,
+            list_org_members,
+            add_org_member,
+            remove_org_member,
+            list_org_projects,
         ),
         components(
             schemas(
@@ -119,9 +143,17 @@ async fn main() -> std::io::Result<()> {
                 OverlayViewRes,
                 UpdateProjectReq,
                 ProjectMemberRes,
+                ProjectRole,
                 Conflict,
                 UserSearchEntryRes,
                 CreateProjectRes,
+                CreateOrgReq,
+                CreateOrgRes,
+                UpdateOrgReq,
+                OrgRes,
+                OrgMemberRes,
+                OrgRole,
+                AddOrgMemberReq,
             ),
         ),
         modifiers(&UuidSchema),
@@ -134,6 +166,7 @@ async fn main() -> std::io::Result<()> {
             (name = "task", description = "Task endpoints"),
             (name = "merge", description = "Merge endpoints"),
             (name = "config", description = "Config endpoints"),
+            (name = "org", description = "Organization endpoints"),
         )
     )]
     struct ApiDoc;
