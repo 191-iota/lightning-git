@@ -5,6 +5,14 @@ use actix_web::web;
 use crate::config::middleware;
 use crate::handler::config_handler::health_check;
 use crate::handler::merge_handler::get_merge_conflicts;
+use crate::handler::org_handler::add_org_member;
+use crate::handler::org_handler::create_org;
+use crate::handler::org_handler::delete_org;
+use crate::handler::org_handler::get_org;
+use crate::handler::org_handler::list_org_members;
+use crate::handler::org_handler::list_org_projects;
+use crate::handler::org_handler::remove_org_member;
+use crate::handler::org_handler::update_org;
 use crate::handler::overlay_handler::create_active_overlay;
 use crate::handler::overlay_handler::get_overlay;
 use crate::handler::overlay_ws::ws_overlay_stream;
@@ -58,7 +66,18 @@ pub fn init_api_scope(cfg: &mut web::ServiceConfig) {
                 "/merge/{project_id}/{file_name:.*}",
                 web::get().to(get_merge_conflicts),
             )
-            .route("/user/{username}", web::get().to(get_user_id_by_username)),
+            .route("/user/{username}", web::get().to(get_user_id_by_username))
+            .route("/orgs", web::post().to(create_org))
+            .route("/orgs/{id}", web::get().to(get_org))
+            .route("/orgs/{id}", web::put().to(update_org))
+            .route("/orgs/{id}", web::delete().to(delete_org))
+            .route("/orgs/{id}/members", web::get().to(list_org_members))
+            .route("/orgs/{id}/members", web::post().to(add_org_member))
+            .route(
+                "/orgs/{id}/members/{user_id}",
+                web::delete().to(remove_org_member),
+            )
+            .route("/orgs/{id}/projects", web::get().to(list_org_projects)),
     );
 }
 
