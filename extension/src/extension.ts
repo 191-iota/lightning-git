@@ -175,6 +175,13 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showInformationMessage(`Project "${name}" created! ID: ${projectId}`);
       return projectId;
     } catch (error) {
+      // 401 here means the user isn't a member of that org (backend's require_org_permission)
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        void vscode.window.showErrorMessage(
+          "You're not a member of this organization. Ask the org owner to add you, or pick a different org.",
+        );
+        return undefined;
+      }
       void vscode.window.showErrorMessage(`Failed to create project: ${getErrorMessage(error)}`);
       return undefined;
     }

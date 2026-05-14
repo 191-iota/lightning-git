@@ -52,6 +52,18 @@
       {
         "command": "lightning-git.viewChange",
         "title": "Lightning Git: View Teammate Change"
+      },
+      {
+        "command": "lightning-git.viewChange",
+        "title": "Lightning Git: View Teammate Change"
+      },
+      {
+        "command": "lightning-git.peekTeammates",
+        "title": "Lightning Git: Peek Teammate Changes"
+      },
+      {
+        "command": "lightning-git.peekConflicts",
+        "title": "Lightning Git: Peek Merge Conflicts"
       }
     ],
     "configuration": {
