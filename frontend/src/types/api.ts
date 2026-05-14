@@ -19,3 +19,16 @@ export interface User {
   id: string;
   email: string;
 }
+
+export interface Org {
+  id: string;
+  name: string;
+}
+
+export interface CreateOrgReq {
+  name: string;
+}
+
+export interface CreateOrgRes {
+  org_id: string;
+}
