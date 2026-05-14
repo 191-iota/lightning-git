@@ -2,9 +2,11 @@ import * as vscode from "vscode";
 import axios from "axios";
 import { AuthManager } from "./auth";
 import { LightningGitClient } from "./client";
+import { OverlaySession } from "./overlaySession";
 
 let authManager: AuthManager;
 let client: LightningGitClient;
+let overlaySession: OverlaySession | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   console.log("Lightning Git extension is now active!");
@@ -12,9 +14,24 @@ export function activate(context: vscode.ExtensionContext): void {
   const config = vscode.workspace.getConfiguration("lightningGit");
   const apiUrl = config.get<string>("apiUrl", "http://localhost:8080");
   const wsUrl = config.get<string>("wsUrl", "ws://localhost:8080");
+  const debounceMs = config.get<number>("debounceMs", 1000);
 
   authManager = new AuthManager(context, apiUrl);
   client = new LightningGitClient(apiUrl, wsUrl, authManager);
+
+  const contentProvider = new (class implements vscode.TextDocumentContentProvider {
+    private content = "";
+
+    setContent(content: string): void {
+      this.content = content;
+    }
+
+    provideTextDocumentContent(): string {
+      return this.content;
+    }
+  })();
+
+  context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider("lightning-git", contentProvider));
 
   async function ensureLoggedIn(): Promise<boolean> {
     if (await authManager.isLoggedIn()) {
@@ -52,6 +69,40 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   }
 
+  async function ensureProject(): Promise<string | undefined> {
+    const existing = context.globalState.get<string>("lightningGit.lastProjectId");
+
+    if (existing) {
+      const choice = await vscode.window.showQuickPick(
+        [
+          {
+            label: "Use existing project",
+            description: `${existing.slice(0, 8)}…`,
+            id: "existing",
+          },
+          {
+            label: "Create new project",
+            id: "new",
+          },
+        ],
+        {
+          placeHolder: "Which project?",
+          ignoreFocusOut: true,
+        },
+      );
+
+      if (!choice) {
+        return undefined;
+      }
+
+      if (choice.id === "existing") {
+        return existing;
+      }
+    }
+
+    return runCreateProject();
+  }
+
   async function runCreateProject(): Promise<string | undefined> {
     const repoUrl = await vscode.window.showInputBox({
       prompt: "Enter the Git repository URL",
@@ -70,6 +121,19 @@ export function activate(context: vscode.ExtensionContext): void {
     });
 
     if (!name) {
+      return undefined;
+    }
+
+    const lastOrgId = context.globalState.get<string>("lightningGit.lastOrgId") ?? "";
+
+    const orgId = await vscode.window.showInputBox({
+      prompt: "Enter the Organization ID (UUID) this project belongs to",
+      placeHolder: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      value: lastOrgId,
+      ignoreFocusOut: true,
+    });
+
+    if (!orgId) {
       return undefined;
     }
 
@@ -104,8 +168,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     try {
-      const projectId = await client.createProject(repoUrl, name);
+      const projectId = await client.createProject(repoUrl, name, orgId);
       await context.globalState.update("lightningGit.lastProjectId", projectId);
+      await context.globalState.update("lightningGit.lastOrgId", orgId);
 
       void vscode.window.showInformationMessage(`Project "${name}" created! ID: ${projectId}`);
       return projectId;
@@ -160,6 +225,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const logoutCommand = vscode.commands.registerCommand("lightning-git.logout", async () => {
     await authManager.logout();
+    overlaySession?.dispose();
+    overlaySession = undefined;
     void vscode.window.showInformationMessage("Logged out successfully.");
   });
 
@@ -267,6 +334,96 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  const startSessionCommand = vscode.commands.registerCommand("lightning-git.startSession", async () => {
+    if (!(await ensureLoggedIn())) {
+      return;
+    }
+
+    const projectId = await ensureProject();
+
+    if (!projectId) {
+      return;
+    }
+
+    const userId = authManager.getUserId();
+
+    if (!userId) {
+      void vscode.window.showErrorMessage("User ID missing. Please logout and login again.");
+      return;
+    }
+
+    overlaySession?.dispose();
+    overlaySession = new OverlaySession(client, projectId, userId, debounceMs);
+
+    try {
+      await overlaySession.start();
+      void vscode.window.showInformationMessage("Lightning Git session started!");
+    } catch (error) {
+      overlaySession.dispose();
+      overlaySession = undefined;
+      void vscode.window.showErrorMessage(`Failed to start session: ${getErrorMessage(error)}`);
+    }
+  });
+
+  const stopSessionCommand = vscode.commands.registerCommand("lightning-git.stopSession", () => {
+    overlaySession?.dispose();
+    overlaySession = undefined;
+    void vscode.window.showInformationMessage("Lightning Git session stopped.");
+  });
+
+  const viewChangeCommand = vscode.commands.registerCommand("lightning-git.viewChange", async () => {
+    if (!overlaySession) {
+      void vscode.window.showWarningMessage("No active session.");
+      return;
+    }
+
+    const users = overlaySession.getActiveUsers();
+
+    if (users.length === 0) {
+      void vscode.window.showInformationMessage("No other users have made changes yet.");
+      return;
+    }
+
+    const selected = await vscode.window.showQuickPick(
+      users.map((userId) => ({
+        label: userId.slice(0, 8),
+        description: "View their changes",
+        userId,
+      })),
+      {
+        placeHolder: "Select a teammate to view their changes",
+      },
+    );
+
+    if (!selected) {
+      return;
+    }
+
+    const change = overlaySession.getOtherUserChange(selected.userId);
+
+    if (!change) {
+      return;
+    }
+
+    const currentDocument = vscode.window.activeTextEditor?.document;
+
+    if (!currentDocument) {
+      void vscode.window.showWarningMessage("Open a file before viewing teammate changes.");
+      return;
+    }
+
+    contentProvider.setContent(change.content);
+
+    const teammateUri = vscode.Uri.parse(`lightning-git:${selected.label}-version`);
+
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      currentDocument.uri,
+      teammateUri,
+      `Your version ↔ ${selected.label}'s version`,
+    );
+  });
+
   context.subscriptions.push(
     registerCommand,
     loginCommand,
@@ -275,10 +432,15 @@ export function activate(context: vscode.ExtensionContext): void {
     connectGithubCommand,
     viewProjectMembersCommand,
     addProjectMemberCommand,
+    startSessionCommand,
+    stopSessionCommand,
+    viewChangeCommand,
   );
 }
 
-export function deactivate(): void {}
+export function deactivate(): void {
+  overlaySession?.dispose();
+}
 
 function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
