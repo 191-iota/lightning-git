@@ -133,6 +133,47 @@ pub async fn remove_org_member(
         })
 }
 
+pub async fn list_user_orgs(
+    db: &SupabaseClient,
+    user_id: &Uuid,
+) -> Result<Vec<OrgRes>, RepoError> {
+    let member_rows = db
+        .select("organization_members")
+        .eq("user_id", user_id.to_string().as_str())
+        .columns(vec!["org_id"])
+        .execute()
+        .await
+        .map_err(|e| {
+            error!("Failed listing user orgs: {e}");
+            RepoError::ExtractionError(String::from("Failed listing user orgs"))
+        })?;
+
+    if member_rows.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let org_ids: Vec<String> = member_rows
+        .iter()
+        .filter_map(|r| r.get("org_id").and_then(|v| v.as_str()).map(String::from))
+        .collect();
+
+    let orgs = db
+        .select("organization")
+        .in_(
+            "id",
+            &org_ids.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+        )
+        .columns(vec!["id", "name"])
+        .execute()
+        .await
+        .map_err(|e| RepoError::ExtractionError(e.to_string()))?;
+
+    Ok(orgs
+        .into_iter()
+        .filter_map(|row| serde_json::from_value(row).ok())
+        .collect())
+}
+
 pub async fn list_org_members(
     db: &SupabaseClient,
     org_id: &Uuid,

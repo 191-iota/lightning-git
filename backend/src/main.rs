@@ -17,6 +17,7 @@ use crate::handler::org_handler::__path_add_org_member;
 use crate::handler::org_handler::__path_create_org;
 use crate::handler::org_handler::__path_delete_org;
 use crate::handler::org_handler::__path_get_org;
+use crate::handler::org_handler::__path_list_my_orgs;
 use crate::handler::org_handler::__path_list_org_members;
 use crate::handler::org_handler::__path_list_org_projects;
 use crate::handler::org_handler::__path_remove_org_member;
@@ -125,6 +126,7 @@ async fn main() -> std::io::Result<()> {
             get_org,
             update_org,
             delete_org,
+            list_my_orgs,
             list_org_members,
             add_org_member,
             remove_org_member,

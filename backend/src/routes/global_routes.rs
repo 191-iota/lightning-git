@@ -9,6 +9,7 @@ use crate::handler::org_handler::add_org_member;
 use crate::handler::org_handler::create_org;
 use crate::handler::org_handler::delete_org;
 use crate::handler::org_handler::get_org;
+use crate::handler::org_handler::list_my_orgs;
 use crate::handler::org_handler::list_org_members;
 use crate::handler::org_handler::list_org_projects;
 use crate::handler::org_handler::remove_org_member;
@@ -68,6 +69,8 @@ pub fn init_api_scope(cfg: &mut web::ServiceConfig) {
             )
             .route("/user/{username}", web::get().to(get_user_id_by_username))
             .route("/orgs", web::post().to(create_org))
+            // must come before /orgs/{id} so "mine" doesnt match as a uuid
+            .route("/orgs/mine", web::get().to(list_my_orgs))
             .route("/orgs/{id}", web::get().to(get_org))
             .route("/orgs/{id}", web::put().to(update_org))
             .route("/orgs/{id}", web::delete().to(delete_org))

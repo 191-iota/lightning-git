@@ -208,6 +208,13 @@ pub async fn get_project(
 
     let repo_path = state.repo_loc.join(proj_id.to_string());
 
+    // Refresh remote-tracking refs so task detection and subsequent reads (via
+    // git show origin/{branch}:{path}) see latest remote state. Fetch failure
+    // shouldn't block the response
+    if let Err(e) = git_service::fetch(&repo_path).await {
+        error!("git fetch failed for proj {proj_id}: {e}");
+    }
+
     // TODO: Should getting a project really fail when detecting and creating tasks fails?
     if let Err(e) = project_service::detect_and_create_tasks(&repo_path, &state.sb_client).await {
         error!("Task detection failed. proj_id : {}, error: {e}", proj_id);
