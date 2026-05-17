@@ -32,3 +32,33 @@ export interface CreateOrgReq {
 export interface CreateOrgRes {
   org_id: string;
 }
+
+export interface Project {
+  id: string;
+  org_id: string;
+  name: string;
+  repo_url: string;
+  created_at?: string;
+}
+
+export interface CreateProjectReq {
+  repo_url: string;
+  name: string;
+  create_tasks_retroactively: boolean;
+  org_id: string;
+}
+
+export interface CreateProjectRes {
+  proj_id: string;
+}
+
+export type TaskType = "Bug" | "Feature" | "Improvement" | "Unknown";
+
+export interface Task {
+  id: string;
+  project_id: string;
+  name: string;
+  branch_name: string;
+  task_type: TaskType;
+  created_at?: string;
+}

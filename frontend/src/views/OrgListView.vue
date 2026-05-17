@@ -30,11 +30,23 @@ function pick(id: string) {
 
     <p v-if="error" class="text-sm text-red-400 mb-4">{{ error }}</p>
 
-    <div v-if="orgStore.orgs.length === 0 && !error" class="text-zinc-500 mb-4">
-      You're not in any organization yet.
+    <div
+      v-if="orgStore.orgs.length === 0 && !error"
+      class="border border-dashed border-zinc-800 rounded-lg p-8 text-center mb-6"
+    >
+      <p class="text-zinc-300 mb-1">No organizations yet</p>
+      <p class="text-sm text-zinc-500 mb-4">
+        Create one to start adding projects and team members.
+      </p>
+      <RouterLink
+        to="/orgs/new"
+        class="inline-block bg-zinc-100 text-zinc-900 rounded px-4 py-2 font-medium"
+      >
+        Create your first organization
+      </RouterLink>
     </div>
 
-    <ul class="space-y-2 mb-6">
+    <ul v-if="orgStore.orgs.length > 0" class="space-y-2 mb-6">
       <li
         v-for="org in orgStore.orgs"
         :key="org.id"
@@ -47,6 +59,7 @@ function pick(id: string) {
     </ul>
 
     <RouterLink
+      v-if="orgStore.orgs.length > 0"
       to="/orgs/new"
       class="inline-block bg-zinc-100 text-zinc-900 rounded px-4 py-2 font-medium"
     >
