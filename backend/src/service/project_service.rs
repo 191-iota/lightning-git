@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::str::FromStr;
 use supabase_rs::SupabaseClient;
@@ -18,19 +19,30 @@ pub fn inject_token(repo_url: &str, token: &str) -> String {
 pub async fn detect_and_create_tasks(
     repo_path: &Path,
     db: &SupabaseClient,
+    project_id: &Uuid,
 ) -> Result<(), LGitIoError> {
     let branches = git_service::list_remote_branches(repo_path).await?;
     let re = Regex::new(r"[/_\-.]").unwrap();
 
+    // skip branches that already have a task row for this project
+    let existing = task_repository::find_by_proj(db, project_id.to_string()).await?;
+    let existing_branches: HashSet<String> = existing
+        .iter()
+        .filter_map(|v| v.get("branch_name").and_then(|n| n.as_str()).map(String::from))
+        .collect();
+
     for b in branches.into_iter() {
-        // Check if current branch name starts with a number or word
+        if existing_branches.contains(&b) {
+            continue;
+        }
 
         let parts: Vec<&str> = re.split(b.as_str()).collect();
 
         let branch_type = match parts[0].parse::<u32>() {
-            Ok(_) => match parts[1].parse::<u32>() {
-                Ok(_) => "Unknown",
-                Err(_) => parts[1],
+            Ok(_) => match parts.get(1).map(|s| s.parse::<u32>()) {
+                Some(Ok(_)) => "Unknown",
+                Some(Err(_)) => parts[1],
+                None => "Unknown",
             },
             Err(_) => parts[0],
         };
@@ -47,6 +59,7 @@ pub async fn detect_and_create_tasks(
             b.clone(),
             TaskType::from_str(branch_type).unwrap(),
             Uuid::new_v4().to_string(),
+            project_id,
         )
         .await?;
     }

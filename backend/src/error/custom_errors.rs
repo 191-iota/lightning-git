@@ -121,6 +121,6 @@ pub enum OverlayError {
 
 #[derive(Error, Debug, Serialize)]
 pub enum GitError {
-    #[error("Project not found")]
+    #[error("{0}")]
     ProjectOverlayNotFoundError(String),
 }

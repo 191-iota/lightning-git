@@ -1,5 +1,5 @@
+use actix_web::HttpResponse;
 use actix_web::body::MessageBody;
-use actix_web::error::ErrorUnauthorized;
 use actix_web::web;
 
 use crate::config::middleware;
@@ -96,9 +96,11 @@ pub fn init_anon_scope(cfg: &mut web::ServiceConfig) {
             .route("/login", web::post().to(login)),
     );
 }
+// Returns Ok with a 401 ServiceResponse rather than Err so the response flows
+// back through the outer Cors wrap and picks up Access-Control-Allow-Origin.
 async fn auth_filter(
     req: ServiceRequest,
-    next: Next<impl MessageBody>,
+    next: Next<impl MessageBody + 'static>,
 ) -> Result<ServiceResponse<impl MessageBody>, Error> {
     let maybe_token = req
         .headers()
@@ -113,13 +115,17 @@ async fn auth_filter(
 
     match middleware::validate_jwt(maybe_token).await {
         Ok(user_id) => {
-            // Insert the user_id from the JWT-Token into ReqData
             req.extensions_mut().insert(MiddlewareData { user_id });
-            next.call(req).await
+            let res = next.call(req).await?;
+            Ok(res.map_into_left_body())
         }
         Err(e) => {
             error!("Authorization failed: {e}");
-            Err(ErrorUnauthorized("Authorization failed."))
+            let (req, _) = req.into_parts();
+            let response = HttpResponse::Unauthorized()
+                .body("Authorization failed.")
+                .map_into_right_body();
+            Ok(ServiceResponse::new(req, response))
         }
     }
 }
