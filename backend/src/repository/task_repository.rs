@@ -4,17 +4,18 @@ use log::error;
 use serde_json::Value;
 use serde_json::json;
 use supabase_rs::SupabaseClient;
+use uuid::Uuid;
 
 use crate::error::custom_errors::RepoError;
 use crate::model::task_type::TaskType;
 
-// FIX: repo errors are currently redundantly handled for extensibility purposes
 pub async fn save_task(
     db: &SupabaseClient,
     name: String,
     branch_name: String,
     task_type: TaskType,
     id: String,
+    project_id: &Uuid,
 ) -> Result<String, RepoError> {
     let db_result = db
         .upsert(
@@ -23,7 +24,8 @@ pub async fn save_task(
             json!({
                 "name": name,
                 "branch_name": branch_name,
-                "task_type": task_type
+                "task_type": task_type,
+                "project_id": project_id.to_string(),
             }),
         )
         .await;
@@ -63,7 +65,7 @@ pub async fn find_by_id(client: &SupabaseClient, id: String) -> Result<Value, Re
 pub async fn find_by_proj(client: &SupabaseClient, id: String) -> Result<Vec<Value>, RepoError> {
     let matches = client
         .select("task")
-        .eq("proj_id", id.as_str())
+        .eq("project_id", id.as_str())
         .execute()
         .await;
 

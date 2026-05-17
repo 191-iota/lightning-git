@@ -84,7 +84,7 @@ pub async fn create_project(
     }
 
     if req.create_tasks_retroactively {
-        if let Err(e) = project_service::detect_and_create_tasks(&repo_path, &state.sb_client).await
+        if let Err(e) = project_service::detect_and_create_tasks(&repo_path, &state.sb_client, &proj_id).await
         {
             error!("Failed creating project: {e}");
             return HttpResponse::BadRequest().finish();
@@ -216,7 +216,7 @@ pub async fn get_project(
     }
 
     // TODO: Should getting a project really fail when detecting and creating tasks fails?
-    if let Err(e) = project_service::detect_and_create_tasks(&repo_path, &state.sb_client).await {
+    if let Err(e) = project_service::detect_and_create_tasks(&repo_path, &state.sb_client, &proj_id).await {
         error!("Task detection failed. proj_id : {}, error: {e}", proj_id);
         return HttpResponse::BadRequest().body("Task detection failed");
     }

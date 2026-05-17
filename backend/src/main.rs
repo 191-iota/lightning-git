@@ -214,6 +214,10 @@ fn setup_address() -> (String, String) {
 async fn init_app_state() -> AppState {
     let repo_location = env::var("GIT_REPO_DEV").expect("Could not find GIT_REPO_DEV");
     let repo_loc_path = PathBuf::from(repo_location);
+    // ensure the clone dir exists so the first project create doesnt 404
+    tokio::fs::create_dir_all(&repo_loc_path)
+        .await
+        .expect("Failed to create repo dir");
     let sb_client = init_supabase_db_client();
     let gh_client = env::var("GITHUB_CLIENT_ID").expect("Could not find GITHUB_CLIENT_ID");
     let gh_callback = env::var("GITHUB_CALLBACK_URL").expect("Could not find GITHUB_CALLBACK_URL");
