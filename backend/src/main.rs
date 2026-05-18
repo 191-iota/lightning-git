@@ -25,24 +25,31 @@ use crate::handler::org_handler::__path_update_org;
 use crate::handler::overlay_handler::__path_create_active_overlay;
 use crate::handler::overlay_handler::__path_get_overlay;
 use crate::handler::overlay_ws::__path_ws_overlay_stream;
+use crate::handler::overlay_ws::__path_ws_project_activity;
 use crate::handler::project_handler::__path_create_project;
 use crate::handler::project_handler::__path_delete_project;
 use crate::handler::project_handler::__path_get_project;
 use crate::handler::project_handler::__path_get_project_file;
+use crate::handler::project_handler::__path_get_project_activity;
 use crate::handler::project_handler::__path_get_project_members;
+use crate::handler::project_handler::__path_list_project_branches;
+use crate::handler::project_handler::__path_list_project_tree;
 use crate::handler::project_handler::__path_update_project;
 use crate::handler::task_handler::__path_get_project_tasks;
 use crate::handler::task_handler::__path_get_task;
 use crate::handler::user_handler::__path_get_user_id_by_username;
 use crate::handler::user_handler::__path_login;
+use crate::handler::user_handler::__path_refresh_token;
 use crate::handler::user_handler::__path_register;
 use crate::model::org::AddOrgMemberReq;
 use crate::model::org::CreateOrgReq;
 use crate::model::org::CreateOrgRes;
+use crate::model::org::MyOrgRes;
 use crate::model::org::OrgMemberRes;
 use crate::model::org::OrgRes;
 use crate::model::org::OrgRole;
 use crate::model::org::UpdateOrgReq;
+use crate::model::overlay::ActiveEdit;
 use crate::model::overlay::Conflict;
 use crate::model::overlay::OverlayViewRes;
 use crate::model::project::CreateProjectReq;
@@ -56,6 +63,8 @@ use crate::model::project::ProjectRole;
 use crate::model::project::UpdateProjectReq;
 use crate::model::task::TaskRes;
 use crate::model::user::LoginPayload;
+use crate::model::user::RefreshReq;
+use crate::model::user::RefreshRes;
 use crate::model::user::RegisterPayload;
 use crate::model::user::UserSearchEntryRes;
 use actix_web::App;
@@ -114,13 +123,18 @@ async fn main() -> std::io::Result<()> {
             get_task,
             get_project_tasks,
             get_project_file,
+            list_project_tree,
+            list_project_branches,
+            get_project_activity,
             get_project_members,
             register,
             login,
+            refresh_token,
             get_overlay,
             create_active_overlay,
             get_merge_conflicts,
             ws_overlay_stream,
+            ws_project_activity,
             get_user_id_by_username,
             create_org,
             get_org,
@@ -142,17 +156,21 @@ async fn main() -> std::io::Result<()> {
                 DeleteProjectReq,
                 LoginPayload,
                 RegisterPayload,
+                RefreshReq,
+                RefreshRes,
                 OverlayViewRes,
                 UpdateProjectReq,
                 ProjectMemberRes,
                 ProjectRole,
                 Conflict,
+                ActiveEdit,
                 UserSearchEntryRes,
                 CreateProjectRes,
                 CreateOrgReq,
                 CreateOrgRes,
                 UpdateOrgReq,
                 OrgRes,
+                MyOrgRes,
                 OrgMemberRes,
                 OrgRole,
                 AddOrgMemberReq,
@@ -223,9 +241,13 @@ async fn init_app_state() -> AppState {
     let gh_callback = env::var("GITHUB_CALLBACK_URL").expect("Could not find GITHUB_CALLBACK_URL");
     let gh_secret = env::var("GITHUB_CLIENT_SECRET").expect("Could not find GITHUB_CLIENT_SECRET");
 
-    // Uncomment when the time comes
-    // let repositories_location_prod = env::var("GIT_REPO_DEV").expect("Could not find GIT_REPO_DEV");
-    //
+    // construct the JwksCache once; clones share the same Arc<RwLock> state
+    let supabase_url = env::var("SUPABASE_URL").expect("Could not find SUPABASE_URL");
+    let jwks_url = format!(
+        "{}/auth/v1/.well-known/jwks.json",
+        supabase_url.trim_end_matches('/'),
+    );
+    let jwks_cache = supabase_jwt::JwksCache::new(&jwks_url);
 
     AppState {
         repo_states: DashMap::<Uuid, ProjectLiveState>::new(),
@@ -235,6 +257,7 @@ async fn init_app_state() -> AppState {
         github_client_id: gh_client,
         github_callback_url: gh_callback,
         github_client_secret: gh_secret,
+        jwks_cache,
     }
 }
 

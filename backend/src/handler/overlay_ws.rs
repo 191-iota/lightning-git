@@ -15,6 +15,42 @@ use crate::model::overlay::{OverlayChangeReq, OverlayWsMsg};
 
 #[utoipa::path(
     get,
+    path = "/api/projects/{project_id}/activity/ws",
+    params(("project_id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")),
+    tag = "project"
+)]
+pub async fn ws_project_activity(
+    req: HttpRequest,
+    body: Payload,
+    state: web::Data<AppState>,
+    path: web::Path<Uuid>,
+) -> HttpResponse {
+    let project_id = path.into_inner();
+    let activity_tx = state.ensure_project_state(project_id);
+
+    let (res, mut session, _stream) = actix_ws::handle(&req, body).unwrap();
+
+    let initial = state.compute_activity(&project_id);
+    let initial_text = serde_json::to_string(&initial).unwrap();
+
+    actix_web::rt::spawn(async move {
+        if session.text(initial_text).await.is_err() {
+            return;
+        }
+        let mut rx = activity_tx.subscribe();
+        while let Ok(snapshot) = rx.recv().await {
+            let text = serde_json::to_string(&snapshot).unwrap();
+            if session.text(text).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    res
+}
+
+#[utoipa::path(
+    get,
     path = "/api/ws/{project_id}/{user_id}/{file_name}",
     params(
         ("project_id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
@@ -48,12 +84,16 @@ pub async fn ws_overlay_stream(
 
     let mut rx = overlay_ref.tx.subscribe();
 
+    // viewers (web frontend) can opt in to see their own changes echoed back,
+    // editors (vscode) keep the default self-filter so typing doesnt loop
+    let echo_self = req.query_string().contains("echo=true");
+
     // Server -> Client (Outbound)
     actix_web::rt::spawn(async move {
         while let Ok(msg) = rx.recv().await {
-            // skip sending user's own changes back to them
             if let OverlayWsMsg::Change(ref change) = msg
                 && change.user_id == user_id
+                && !echo_self
             {
                 continue;
             }
@@ -74,16 +114,28 @@ pub async fn ws_overlay_stream(
             // DashMap nesting: each layer can fail independently, can't collapse without skipping broadcast
             #[allow(clippy::collapsible_if)]
             if let Ok(change) = serde_json::from_str::<OverlayChangeReq>(&content) {
-                if let Some(proj) = state_clone.repo_states.get(&project_id) {
+                let activity_tx = if let Some(proj) = state_clone.repo_states.get(&project_id) {
                     if let Some(overlay) = proj.overlays.get(&file_name_clone) {
+                        // we already have both `change.content` and `overlay.original_content`
+                        // here; do the divergence compare once at edit time so compute_activity
+                        // can stay O(N entries) instead of O(N * content_size)
+                        let divergent = change.content != overlay.original_content;
                         if let Some(mut user_overlay) = overlay.user_contents.get_mut(&user_id) {
                             user_overlay.content = change.content.clone();
                             user_overlay.edited_sections =
                                 (change.line_section.0, change.line_section.1);
                             user_overlay.updated_at = Instant::now();
+                            user_overlay.is_divergent = divergent;
                         }
                         let _ = overlay.tx.send(OverlayWsMsg::Change(change));
                     }
+                    Some(proj.activity_tx.clone())
+                } else {
+                    None
+                };
+                // released the proj guard before recomputing to avoid lock re-entry
+                if let Some(tx) = activity_tx {
+                    let _ = tx.send(state_clone.compute_activity(&project_id));
                 }
             }
         }

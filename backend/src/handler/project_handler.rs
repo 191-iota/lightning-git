@@ -228,6 +228,85 @@ pub async fn get_project(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/projects/{id}/activity",
+    params(
+        ("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+    ),
+    tag = "project",
+)]
+pub async fn get_project_activity(
+    state: web::Data<AppState>,
+    path: web::Path<Uuid>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    let proj_id = path.into_inner();
+    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+    HttpResponse::Ok().json(state.compute_activity(&proj_id))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/projects/{id}/branches",
+    params(("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")),
+    tag = "project",
+)]
+pub async fn list_project_branches(
+    state: web::Data<AppState>,
+    path: web::Path<Uuid>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    let proj_id = path.into_inner();
+    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+
+    let repo_path = state.repo_loc.join(proj_id.to_string());
+    match git_service::list_remote_branches(&repo_path).await {
+        Ok(set) => {
+            let mut v: Vec<String> = set.into_iter().collect();
+            v.sort();
+            HttpResponse::Ok().json(v)
+        }
+        Err(e) => {
+            error!("Failed listing branches for {proj_id}: {e}");
+            HttpResponse::BadRequest().body("Failed listing branches")
+        }
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/projects/{id}/tree",
+    params(
+        ("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+        ("branch" = String, Query, example = "main"),
+    ),
+    tag = "project",
+)]
+pub async fn list_project_tree(
+    state: web::Data<AppState>,
+    path: web::Path<Uuid>,
+    query: web::Query<std::collections::HashMap<String, String>>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    let proj_id = path.into_inner();
+    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+
+    let branch = match query.get("branch") {
+        Some(b) => b.clone(),
+        None => return HttpResponse::BadRequest().body("missing branch query param"),
+    };
+
+    let repo_path = state.repo_loc.join(proj_id.to_string());
+    match git_service::list_files(&repo_path, &branch).await {
+        Ok(files) => HttpResponse::Ok().json(files),
+        Err(e) => {
+            error!("Failed listing files for {proj_id}@{branch}: {e}");
+            HttpResponse::BadRequest().body("Failed listing files")
+        }
+    }
+}
+
+#[utoipa::path(
     post,
     path = "/api/projects/{id}/file",
     params(
