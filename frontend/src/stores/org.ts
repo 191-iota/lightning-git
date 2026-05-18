@@ -1,16 +1,16 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/services/api";
-import type { CreateOrgReq, CreateOrgRes, Org } from "@/types/api";
+import type { CreateOrgReq, CreateOrgRes, MyOrg } from "@/types/api";
 
 export const useOrgStore = defineStore("org", () => {
   const ORG_KEY = "currentOrgId";
 
-  const orgs = ref<Org[]>([]);
+  const orgs = ref<MyOrg[]>([]);
   const currentOrgId = ref<string | null>(localStorage.getItem(ORG_KEY));
 
   async function fetch() {
-    const { data } = await api.get<Org[]>("/api/orgs/mine");
+    const { data } = await api.get<MyOrg[]>("/api/orgs/mine");
     orgs.value = data;
   }
 

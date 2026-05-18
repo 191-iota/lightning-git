@@ -11,10 +11,20 @@ const projectStore = useProjectStore();
 const router = useRouter();
 const error = ref<string | null>(null);
 
+// project_id -> number of active editors right now
+const activeCounts = ref<Record<string, number>>({});
+
 onMounted(async () => {
   if (!orgStore.currentOrgId) return;
   try {
     await projectStore.fetch(orgStore.currentOrgId);
+    // pull current activity per project so dashboard dots reflect realtime state
+    await Promise.all(
+      projectStore.projects.map(async (p) => {
+        const edits = await projectStore.fetchActivity(p.id).catch(() => []);
+        activeCounts.value[p.id] = edits.length;
+      }),
+    );
   } catch {
     error.value = "Failed to load projects";
   }
@@ -67,8 +77,25 @@ async function onLogout() {
           :to="{ name: 'project', params: { id: project.id } }"
           class="block border border-zinc-800 rounded p-3 hover:bg-zinc-900"
         >
-          <p class="font-medium">{{ project.name }}</p>
-          <p class="text-xs text-zinc-500">{{ project.repo_url }}</p>
+          <div class="flex items-center gap-2">
+            <span
+              class="inline-block w-2 h-2 rounded-full flex-shrink-0"
+              :class="activeCounts[project.id] ? 'bg-amber-400' : 'bg-zinc-700'"
+              :title="
+                activeCounts[project.id]
+                  ? `${activeCounts[project.id]} active edits`
+                  : 'no live activity'
+              "
+            ></span>
+            <p class="font-medium">{{ project.name }}</p>
+            <span
+              v-if="activeCounts[project.id]"
+              class="text-xs text-amber-400 ml-1"
+            >
+              {{ activeCounts[project.id] }} editing
+            </span>
+          </div>
+          <p class="text-xs text-zinc-500 mt-1">{{ project.repo_url }}</p>
         </RouterLink>
       </ul>
     </main>

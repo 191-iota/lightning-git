@@ -13,6 +13,12 @@ export interface LoginRes {
   user_id: string;
   email: string;
   access_token: string;
+  refresh_token: string;
+}
+
+export interface RefreshRes {
+  access_token: string;
+  refresh_token: string;
 }
 
 export interface User {
@@ -23,6 +29,12 @@ export interface User {
 export interface Org {
   id: string;
   name: string;
+}
+
+export interface MyOrg {
+  id: string;
+  name: string;
+  role: "owner" | "member";
 }
 
 export interface CreateOrgReq {
@@ -61,4 +73,17 @@ export interface Task {
   branch_name: string;
   task_type: TaskType;
   created_at?: string;
+}
+
+export interface ActiveEdit {
+  file: string;
+  user_id: string;
+  branch: string;
+  edited_sections: [number, number];
+}
+
+export interface ProjectMember {
+  id: string;
+  display_name: string;
+  role: "admin" | "member";
 }
