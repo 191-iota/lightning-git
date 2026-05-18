@@ -46,6 +46,18 @@ pub struct LoginRes {
     #[validate(email)]
     pub email: String,
     pub access_token: String,
+    pub refresh_token: String,
+}
+
+#[derive(Deserialize, Validate, ToSchema)]
+pub struct RefreshReq {
+    pub refresh_token: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RefreshRes {
+    pub access_token: String,
+    pub refresh_token: String,
 }
 
 #[derive(Deserialize)]

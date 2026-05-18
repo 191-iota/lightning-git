@@ -4,6 +4,7 @@ use crate::model::user::GithubCallbackQuery;
 use crate::model::user::GithubTokenResponse;
 use crate::model::user::LoginPayload;
 use crate::model::user::LoginRes;
+use crate::model::user::RefreshReq;
 use crate::model::user::RegisterPayload;
 use crate::repository::user_repository;
 use actix_web::HttpResponse;
@@ -129,7 +130,30 @@ pub async fn login(body: web::Json<LoginPayload>, state: web::Data<AppState>) ->
         user_id: session.user.id,
         email: body.email.clone(),
         access_token: session.access_token,
+        refresh_token: session.refresh_token,
     })
+}
+
+#[utoipa::path(
+    post,
+    path = "/refresh",
+    request_body = RefreshReq,
+    tag = "user",
+)]
+pub async fn refresh_token(
+    body: web::Json<RefreshReq>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    match state.auth_client.refresh_session(&body.refresh_token).await {
+        Ok(session) => HttpResponse::Ok().json(crate::model::user::RefreshRes {
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+        }),
+        Err(e) => {
+            error!("Refresh failed: {e}");
+            HttpResponse::Unauthorized().json(json!({"error": "Refresh failed"}))
+        }
+    }
 }
 
 // GET /auth/github?user_id=<uuid>
