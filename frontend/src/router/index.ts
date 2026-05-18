@@ -51,6 +51,12 @@ const router = createRouter({
       component: () => import("@/views/ProjectView.vue"),
       meta: { requiresAuth: true, requiresOrg: true },
     },
+    {
+      path: "/projects/:id/overlay",
+      name: "overlay",
+      component: () => import("@/views/OverlayView.vue"),
+      meta: { requiresAuth: true, requiresOrg: true },
+    },
   ],
 });
 

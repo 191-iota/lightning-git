@@ -53,7 +53,15 @@ function pick(id: string) {
         class="border border-zinc-800 rounded p-3 hover:bg-zinc-900 cursor-pointer"
         @click="pick(org.id)"
       >
-        <p class="font-medium">{{ org.name }}</p>
+        <p class="font-medium flex items-center gap-2">
+          {{ org.name }}
+          <span
+            class="text-xs px-1.5 py-0.5 rounded"
+            :class="org.role === 'owner' ? 'bg-amber-900/50 text-amber-300' : 'bg-zinc-800 text-zinc-400'"
+          >
+            {{ org.role }}
+          </span>
+        </p>
         <p class="text-xs text-zinc-500">{{ org.id }}</p>
       </li>
     </ul>
