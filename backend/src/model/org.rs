@@ -59,6 +59,14 @@ pub struct OrgRes {
     pub name: String,
 }
 
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct MyOrgRes {
+    #[schema(value_type = String)]
+    pub id: Uuid,
+    pub name: String,
+    pub role: OrgRole,
+}
+
 #[derive(Deserialize, Validate, ToSchema)]
 pub struct AddOrgMemberReq {
     #[schema(value_type = String)]

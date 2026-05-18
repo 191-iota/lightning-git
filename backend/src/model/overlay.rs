@@ -30,7 +30,8 @@ pub enum OverlayWsMsg {
 pub struct ProjectLiveState {
     // Key: Filename; Value: Overlay
     pub overlays: DashMap<String, Overlay>,
-    // TODO: add another dashmap for WS subscribers
+    // project-wide broadcast: every per-file Change triggers a fresh snapshot
+    pub activity_tx: broadcast::Sender<Vec<ActiveEdit>>,
 }
 
 #[derive(Clone)]
@@ -47,6 +48,9 @@ pub struct UserOverlay {
     pub branch: String,
     pub edited_sections: (u32, u32),
     pub updated_at: Instant,
+    // set during the Change handler so compute_activity doesnt have to compare
+    // user content with original_content (O(content_size)) on every snapshot
+    pub is_divergent: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, ToSchema)]
@@ -89,6 +93,16 @@ pub struct Conflict {
     pub hunks: Vec<Hunk>, // the conflicting hunks from different branches
 }
 
+// One active edit visible in the project-wide activity dashboard.
+#[derive(Serialize, ToSchema, Debug, Clone)]
+pub struct ActiveEdit {
+    pub file: String,
+    #[schema(value_type = String)]
+    pub user_id: Uuid,
+    pub branch: String,
+    pub edited_sections: (u32, u32),
+}
+
 /// Returns a guard to the overlay stored for `file_name`.
 /// The guard lives as long as the caller holds it, so no cloning occurs.
 pub fn extract_overlay<'a>(
@@ -124,6 +138,7 @@ impl UserOverlay {
             edited_sections: (0, 0),
             branch,
             updated_at: Instant::now(),
+            is_divergent: false,
         }
     }
 }
