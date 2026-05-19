@@ -13,7 +13,7 @@
     "pinia": "^3.0.4",
     "vue": "^3.5.34",
     "vue-router": "^5.0.7",
-    "vuedraggable": "^2.24.3"
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.12.4",

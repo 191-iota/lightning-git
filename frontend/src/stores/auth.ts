@@ -50,7 +50,12 @@ export const useAuthStore = defineStore("auth", () => {
   let inFlight: Promise<string | null> | null = null;
   async function refresh(): Promise<string | null> {
     if (inFlight) return inFlight;
-    if (!refreshToken.value) return null;
+    // no refresh_token means we cant recover. clear the stale access token
+    // so the router guard sees us as logged out and lets /login render.
+    if (!refreshToken.value) {
+      clearAuth();
+      return null;
+    }
     inFlight = (async () => {
       try {
         const { data } = await api.post<RefreshRes>("/refresh", {
