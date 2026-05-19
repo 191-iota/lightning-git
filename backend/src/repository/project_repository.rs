@@ -200,33 +200,3 @@ pub async fn find_project_by_id(client: &SupabaseClient, id: String) -> Result<V
 
     Ok(handled_result[0].clone())
 }
-
-pub async fn find_repo_url_by_id(client: &SupabaseClient, id: String) -> Result<String, RepoError> {
-    let db_result = client
-        .from("project")
-        .columns(vec!["repo_url"])
-        .eq("id", id.as_str())
-        .limit(1)
-        .execute()
-        .await;
-
-    let handled_result = db_result.map_err(|e| {
-        error!("Failed retrieving repo_url for project {id}: {e}");
-        RepoError::ExtractionError(String::from(
-            "Could not find repository url for this project",
-        ))
-    })?;
-
-    let v = handled_result
-        .first()
-        .and_then(|val| val.get("repo_url"))
-        .and_then(|s| s.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            error!("repo_url missing or not a string for project {id}");
-            RepoError::ExtractionError(String::from(
-                "Could not find repository url for this project",
-            ))
-        })?;
-    Ok(v)
-}

@@ -44,13 +44,6 @@ pub struct ProjectRes {
     pub tasks: Vec<TaskRes>,
 }
 
-#[derive(Deserialize, ToSchema)]
-pub struct DeleteProjectReq {
-    #[schema(value_type = String)]
-    pub id: Uuid,
-    pub repo_url: String,
-}
-
 #[derive(Deserialize, Validate, ToSchema)]
 pub struct UpdateProjectReq {
     #[validate(length(min = 3, max = 255))]
@@ -66,11 +59,6 @@ pub struct CreateProjectReq {
     pub create_tasks_retroactively: bool,
     #[schema(value_type = String)]
     pub org_id: Uuid,
-}
-
-#[derive(Deserialize, ToSchema)]
-pub struct FileReadReq {
-    pub file_path: String,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

@@ -38,14 +38,6 @@ pub async fn save_task(
     Ok(handled_result)
 }
 
-// Unused for now
-pub async fn delete_task(client: &SupabaseClient, id: String) -> Result<(), RepoError> {
-    client.delete("task", id.as_str()).await.map_err(|e| {
-        error!("Failed deleting task: {e}");
-        RepoError::DeletionError(String::from("Failed deleting Task"))
-    })
-}
-
 pub async fn find_by_id(client: &SupabaseClient, id: String) -> Result<Value, RepoError> {
     let matches = client
         .select("task")
