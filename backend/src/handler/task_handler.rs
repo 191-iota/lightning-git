@@ -20,7 +20,7 @@ pub async fn get_project_tasks(
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
     let project_id = path.into_inner();
-    require_project_permission!(&state.sb_client, &project_id, &ext_data.user_id);
+    require_project_permission!(&state, &project_id, &ext_data.user_id);
 
     let res = task_repository::find_by_proj(&state.sb_client, project_id.to_string()).await;
     match res {
@@ -47,7 +47,7 @@ pub async fn get_task(
     // ids.1 => task_id
     let ids = path.into_inner();
 
-    require_project_permission!(&state.sb_client, &ids.0, &ext_data.user_id);
+    require_project_permission!(&state, &ids.0, &ext_data.user_id);
 
     let res = task_repository::find_by_id(&state.sb_client, ids.1.to_string()).await;
     match res {
