@@ -24,7 +24,7 @@ pub async fn get_merge_conflicts(
 ) -> HttpResponse {
     let (proj_id, file_name) = path.into_inner();
 
-    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+    require_project_permission!(&state, &proj_id, &ext_data.user_id);
 
     let Some(proj) = state.repo_states.get(&proj_id) else {
         return HttpResponse::NotFound().finish();
