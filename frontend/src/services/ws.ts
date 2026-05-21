@@ -36,17 +36,23 @@ export class OverlayWebSocket {
   private handlers: MessageHandler[] = [];
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly opts: OverlayWsOpts;
+  // dispose() runs before the socket fires its async onclose, so without this
+  // flag the onclose handler would schedule a reconnect on an instance that
+  // the caller has already thrown away — leaving an orphan socket alive.
+  private disposed = false;
 
   constructor(opts: OverlayWsOpts) {
     this.opts = opts;
   }
 
   connect(): void {
+    if (this.disposed) return;
     if (this.socket?.readyState === WebSocket.OPEN) return;
     const base = import.meta.env.VITE_WS_URL || "ws://localhost:8080";
     const path = `/api/overlay/ws/${this.opts.projectId}/${this.opts.userId}/${encodeURIComponent(this.opts.fileName)}`;
-    // token goes in query because browsers cant set headers on WS handshake
-    this.socket = new WebSocket(`${base}${path}?token=${encodeURIComponent(this.opts.token)}`);
+    // token goes in query because browsers cant set headers on WS handshake.
+    // echo=true so the viewer also sees its own changes (vscode side omits this).
+    this.socket = new WebSocket(`${base}${path}?token=${encodeURIComponent(this.opts.token)}&echo=true`);
 
     this.socket.onmessage = (event) => {
       try {
@@ -63,6 +69,7 @@ export class OverlayWebSocket {
     };
 
     this.socket.onclose = () => {
+      if (this.disposed) return;
       this.reconnectTimer = setTimeout(() => this.connect(), 3000);
     };
   }
@@ -76,8 +83,12 @@ export class OverlayWebSocket {
   }
 
   dispose(): void {
+    // set disposed *before* close() so the async onclose short-circuits
+    this.disposed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     this.socket?.close();
     this.socket = null;
+    this.handlers = [];
   }
 }

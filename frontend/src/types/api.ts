@@ -26,11 +26,6 @@ export interface User {
   email: string;
 }
 
-export interface Org {
-  id: string;
-  name: string;
-}
-
 export interface MyOrg {
   id: string;
   name: string;

@@ -5,16 +5,17 @@ import api from "@/services/api";
 import { OverlayWebSocket, type OverlayUserView, type OverlayWsMsg } from "@/services/ws";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
+import { useActivityStore } from "@/stores/activity";
 import type { ActiveEdit } from "@/types/api";
 import FileTreeNode, { type TreeNode } from "@/components/FileTreeNode.vue";
 
 const route = useRoute();
 const auth = useAuthStore();
 const projectStore = useProjectStore();
+const activityStore = useActivityStore();
 
 const projectId = computed(() => route.params.id as string);
 const branch = ref((route.query.branch as string) || "");
-const branches = ref<string[]>([]);
 const files = ref<string[]>([]);
 const currentFile = ref<string | null>(null);
 
@@ -57,8 +58,9 @@ const others = ref<OverlayUserView[]>([]);
 const error = ref<string | null>(null);
 const loadingTree = ref(false);
 
-// project-wide active edits across all branches, used to dot the file tree
-const projectEdits = ref<ActiveEdit[]>([]);
+// project-wide active edits across all branches, used to dot the file tree.
+// sourced from the shared activity store so the WS doesnt thrash on view changes.
+const projectEdits = computed<ActiveEdit[]>(() => activityStore.edits);
 const editedFileSet = computed(() => new Set(projectEdits.value.map((e) => e.file)));
 
 // best-guess branch for a user editing the current file (from project activity feed)
@@ -118,36 +120,10 @@ function lineClass(line: ProjLine): string {
 }
 
 let ws: OverlayWebSocket | null = null;
-let activityWs: WebSocket | null = null;
-
-function connectActivity() {
-  if (!auth.token) return;
-  const base = import.meta.env.VITE_WS_URL || "ws://localhost:8080";
-  const url = `${base}/api/projects/${projectId.value}/activity/ws?token=${encodeURIComponent(auth.token)}`;
-  activityWs = new WebSocket(url);
-  activityWs.onmessage = (event) => {
-    try {
-      projectEdits.value = JSON.parse(event.data) as ActiveEdit[];
-    } catch {
-      // ignore malformed
-    }
-  };
-}
-
-async function loadBranches() {
-  try {
-    const { data } = await api.get<string[]>(`/api/projects/${projectId.value}/branches`);
-    branches.value = data;
-    if (!branch.value && data.includes("main")) branch.value = "main";
-  } catch {
-    // dropdown stays empty; user can still type a branch
-  }
-}
 
 onMounted(() => {
   projectStore.fetchMembers(projectId.value).catch(() => undefined);
-  loadBranches();
-  connectActivity();
+  activityStore.ensure(projectId.value);
 });
 
 async function loadTree() {
@@ -169,38 +145,78 @@ async function loadTree() {
 
 async function openFile(path: string) {
   if (!auth.user || !auth.token) return;
+  // clicking the same file again should be a no-op — tearing down a healthy WS
+  // and re-fetching the file just to land in the same state caused flicker and
+  // a spurious "reconnect" on a connection that was already live.
+  if (currentFile.value === path) return;
   error.value = null;
   currentFile.value = path;
-  try {
-    const encodedFile = path.split("/").map(encodeURIComponent).join("/");
-    // PUT seeds the overlay so the WS channel exists. We register as the
-    // current user, but other clients filter us out of the active-editors
-    // list because our content hasnt diverged from the base.
-    await api.put(
-      `/api/overlay/${projectId.value}/${auth.user.id}/${encodedFile}?branch=${encodeURIComponent(branch.value)}`,
-    );
-    const { data } = await api.get(
-      `/api/overlay/${projectId.value}/${auth.user.id}/${encodedFile}`,
-    );
-    baseContent.value = data.original_content;
-    // every divergent editor counts (including the current user editing in vscode)
-    others.value = (data.all_user_contents as OverlayUserView[]).filter(
-      (u) => u.content !== data.original_content,
-    );
+  others.value = [];
+  ws?.dispose();
+  ws = null;
 
-    ws?.dispose();
-    ws = new OverlayWebSocket({
-      projectId: projectId.value,
-      userId: auth.user.id,
-      fileName: path,
-      token: auth.token,
-    });
-    ws.onMessage(handleMessage);
-    ws.connect();
+  // view mode: just fetch the current branch content. no overlay involvement.
+  try {
+    const { data } = await api.get<string>(
+      `/api/projects/${projectId.value}/file?branch=${encodeURIComponent(branch.value)}&path=${encodeURIComponent(path)}`,
+      { responseType: "text", transformResponse: [(v) => v] },
+    );
+    baseContent.value = data;
   } catch {
-    error.value = "Failed to open file";
+    error.value = "Failed to read file";
+    baseContent.value = "";
+  }
+
+  // live mode is opened lazily by the activity-driven watcher below, only when
+  // someone is actually editing this file. otherwise no per-file ws connects.
+}
+
+async function connectFileLive(path: string) {
+  if (!auth.user || !auth.token || ws) return;
+  // assign `ws` synchronously so a re-firing watcher cant race past the
+  // `!ws` guard during the await below and spawn a second socket.
+  ws = new OverlayWebSocket({
+    projectId: projectId.value,
+    userId: auth.user.id,
+    fileName: path,
+    token: auth.token,
+  });
+  ws.onMessage(handleMessage);
+  ws.connect();
+
+  // seed `others` with the current overlay state
+  try {
+    const encoded = path.split("/").map(encodeURIComponent).join("/");
+    const { data } = await api.get(
+      `/api/overlay/${projectId.value}/${auth.user.id}/${encoded}`,
+    );
+    // include every active user — projectedLines does the per-line diff
+    // against baseContent and skips lines that already match, so this wont
+    // create spurious colour but DOES surface the main-vs-branch distinction
+    // before the user has typed anything.
+    others.value = data.all_user_contents as OverlayUserView[];
+  } catch {
+    // overlay may exist as a broadcast channel without an HTTP-readable
+    // snapshot if no one has PUT yet; the WS stream will fill `others` in.
   }
 }
+
+// connect the per-file WS only when activity feed reports this file has editors,
+// and tear it down when activity stops. avoids noisy 404s on idle files.
+watch(
+  () => ({ file: currentFile.value, edits: editedFileSet.value }),
+  ({ file, edits }) => {
+    if (!file) return;
+    if (edits.has(file)) {
+      if (!ws) void connectFileLive(file);
+    } else if (ws) {
+      ws.dispose();
+      ws = null;
+      others.value = [];
+    }
+  },
+  { deep: true },
+);
 
 function handleMessage(msg: OverlayWsMsg) {
   if (msg.kind !== "change") return;
@@ -218,7 +234,7 @@ function handleMessage(msg: OverlayWsMsg) {
   else others.value.push(entry);
 }
 
-// load tree when branch becomes valid; auto-open file once if linked from activity view
+// load tree on mount; auto-open file once if linked from activity view.
 let autoOpened = false;
 watch(
   branch,
@@ -228,6 +244,18 @@ watch(
     if (!autoOpened && queryFile && files.value.includes(queryFile)) {
       autoOpened = true;
       await openFile(queryFile);
+      return;
+    }
+    if (currentFile.value) {
+      if (files.value.includes(currentFile.value)) {
+        await openFile(currentFile.value);
+      } else {
+        currentFile.value = null;
+        baseContent.value = "";
+        others.value = [];
+        ws?.dispose();
+        ws = null;
+      }
     }
   },
   { immediate: true },
@@ -235,8 +263,8 @@ watch(
 
 onUnmounted(() => {
   ws?.dispose();
-  activityWs?.close();
-  activityWs = null;
+  // intentionally NOT disposing activityStore — its WS is shared and persists
+  // across the ProjectView <-> OverlayView navigation.
 });
 </script>
 
@@ -247,16 +275,6 @@ onUnmounted(() => {
         &larr; Project
       </RouterLink>
       <h1 class="text-xl font-semibold">Live view</h1>
-      <label class="ml-auto flex items-center gap-2">
-        <span class="text-xs text-zinc-500">Branch</span>
-        <select
-          v-model="branch"
-          class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm w-48 focus:outline-none focus:border-zinc-500"
-        >
-          <option v-if="branches.length === 0" :value="branch">{{ branch || "(none loaded)" }}</option>
-          <option v-for="b in branches" :key="b" :value="b">{{ b }}</option>
-        </select>
-      </label>
     </header>
 
     <p v-if="error" class="text-sm text-red-400 mb-3">{{ error }}</p>
@@ -265,7 +283,7 @@ onUnmounted(() => {
       <aside class="col-span-3 border border-zinc-800 rounded p-3">
         <h2 class="text-sm font-medium text-zinc-300 mb-2">Files</h2>
         <p v-if="loadingTree" class="text-xs text-zinc-500">Loading...</p>
-        <p v-else-if="!branch" class="text-xs text-zinc-500">Pick a branch first.</p>
+        <p v-else-if="!branch" class="text-xs text-zinc-500">No branch in URL.</p>
         <p v-else-if="files.length === 0" class="text-xs text-zinc-500">No files.</p>
         <ul class="space-y-0.5 text-sm">
           <FileTreeNode
@@ -286,13 +304,14 @@ onUnmounted(() => {
         </p>
         <div
           v-if="currentFile"
-          class="bg-zinc-900 border border-zinc-800 rounded p-3 text-sm font-mono whitespace-pre overflow-auto max-h-[80vh] min-h-[200px]"
+          class="bg-zinc-900 border border-zinc-800 rounded p-3 text-sm font-mono overflow-auto max-h-[80vh] min-h-[200px]"
         >
           <div
             v-for="(line, i) in projectedLines"
             :key="i"
             :class="lineClass(line)"
-          >{{ line.text || " " }}</div>
+            class="whitespace-pre leading-5"
+          >{{ line.text || " " }}</div>
         </div>
       </main>
 
