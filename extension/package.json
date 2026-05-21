@@ -30,28 +30,12 @@
         "title": "Lightning Git: Create Project"
       },
       {
-        "command": "lightning-git.connectGithub",
-        "title": "Lightning Git: Connect GitHub"
-      },
-      {
-        "command": "lightning-git.viewProjectMembers",
-        "title": "Lightning Git: View Project Members"
-      },
-      {
-        "command": "lightning-git.addProjectMember",
-        "title": "Lightning Git: Add Project Member"
-      },
-      {
         "command": "lightning-git.startSession",
         "title": "Lightning Git: Start Session"
       },
       {
         "command": "lightning-git.stopSession",
         "title": "Lightning Git: Stop Session"
-      },
-      {
-        "command": "lightning-git.viewChange",
-        "title": "Lightning Git: View Teammate Change"
       },
       {
         "command": "lightning-git.viewChange",

@@ -58,7 +58,7 @@ export class OverlaySession {
   private showingPeek = false;
   private showingConflicts = false;
 
-  private static readonly CONFLICT_POLL_INTERVAL_MS = 10_000;
+  private static readonly CONFLICT_POLL_INTERVAL_MS = 30_000;
 
   constructor(
     private readonly client: LightningGitClient,
