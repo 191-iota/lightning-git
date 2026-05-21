@@ -1,9 +1,9 @@
 /// Requires the caller to be at least a member of the given project.
 /// Org owners of the project's org also satisfy this check.
 macro_rules! require_project_permission {
-    ($sb_client:expr, $project_id:expr, $user_id:expr) => {
+    ($state:expr, $project_id:expr, $user_id:expr) => {
         match crate::service::permission_service::check_project_permission(
-            &$sb_client,
+            $state,
             &$project_id,
             &$user_id,
             crate::model::project::ProjectRole::Member,
@@ -30,9 +30,9 @@ macro_rules! require_project_permission {
 /// Requires the caller to be a project admin.
 /// Org owners of the projects org also satisfy this check
 macro_rules! require_project_admin {
-    ($sb_client:expr, $project_id:expr, $user_id:expr) => {
+    ($state:expr, $project_id:expr, $user_id:expr) => {
         match crate::service::permission_service::check_project_permission(
-            &$sb_client,
+            $state,
             &$project_id,
             &$user_id,
             crate::model::project::ProjectRole::Admin,
@@ -58,9 +58,9 @@ macro_rules! require_project_admin {
 
 /// Requires the caller to be at least a member of the given org.
 macro_rules! require_org_permission {
-    ($sb_client:expr, $org_id:expr, $user_id:expr) => {
+    ($state:expr, $org_id:expr, $user_id:expr) => {
         match crate::service::permission_service::check_org_permission(
-            &$sb_client,
+            $state,
             &$org_id,
             &$user_id,
             crate::model::org::OrgRole::Member,
@@ -86,9 +86,9 @@ macro_rules! require_org_permission {
 
 /// Requires the caller to be the org owner.
 macro_rules! require_org_owner {
-    ($sb_client:expr, $org_id:expr, $user_id:expr) => {
+    ($state:expr, $org_id:expr, $user_id:expr) => {
         match crate::service::permission_service::check_org_permission(
-            &$sb_client,
+            $state,
             &$org_id,
             &$user_id,
             crate::model::org::OrgRole::Owner,

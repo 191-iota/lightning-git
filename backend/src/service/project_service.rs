@@ -32,6 +32,10 @@ pub async fn detect_and_create_tasks(
         .collect();
 
     for b in branches.into_iter() {
+        // main/master/HEAD are integration targets, not work units — never tasks
+        if matches!(b.as_str(), "main" | "master" | "HEAD") {
+            continue;
+        }
         if existing_branches.contains(&b) {
             continue;
         }

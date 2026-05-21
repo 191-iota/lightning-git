@@ -75,7 +75,7 @@ pub async fn get_org(
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
     let org_id = path.into_inner();
-    require_org_permission!(&state.sb_client, &org_id, &ext_data.user_id);
+    require_org_permission!(&state, &org_id, &ext_data.user_id);
 
     match org_repository::find_org_by_id(&state.sb_client, &org_id).await {
         Ok(org) => HttpResponse::Ok().json(org),
@@ -103,7 +103,7 @@ pub async fn update_org(
         return HttpResponse::BadRequest().json(e);
     }
     let org_id = path.into_inner();
-    require_org_owner!(&state.sb_client, &org_id, &ext_data.user_id);
+    require_org_owner!(&state, &org_id, &ext_data.user_id);
 
     match org_repository::update_org(&state.sb_client, &org_id, &req.name).await {
         Ok(_) => HttpResponse::Ok().finish(),
@@ -126,7 +126,7 @@ pub async fn delete_org(
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
     let org_id = path.into_inner();
-    require_org_owner!(&state.sb_client, &org_id, &ext_data.user_id);
+    require_org_owner!(&state, &org_id, &ext_data.user_id);
 
     match org_repository::delete_org(&state.sb_client, &org_id).await {
         Ok(_) => HttpResponse::Ok().finish(),
@@ -149,7 +149,7 @@ pub async fn list_org_members(
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
     let org_id = path.into_inner();
-    require_org_permission!(&state.sb_client, &org_id, &ext_data.user_id);
+    require_org_permission!(&state, &org_id, &ext_data.user_id);
 
     match org_repository::list_org_members(&state.sb_client, &org_id).await {
         Ok(members) => HttpResponse::Ok().json(members),
@@ -177,7 +177,7 @@ pub async fn add_org_member(
         return HttpResponse::BadRequest().json(e);
     }
     let org_id = path.into_inner();
-    require_org_owner!(&state.sb_client, &org_id, &ext_data.user_id);
+    require_org_owner!(&state, &org_id, &ext_data.user_id);
 
     match org_repository::add_org_member(&state.sb_client, &org_id, &req.user_id, req.role).await {
         Ok(_) => HttpResponse::Ok().finish(),
@@ -203,7 +203,7 @@ pub async fn remove_org_member(
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
     let (org_id, target_user) = path.into_inner();
-    require_org_owner!(&state.sb_client, &org_id, &ext_data.user_id);
+    require_org_owner!(&state, &org_id, &ext_data.user_id);
 
     if target_user == ext_data.user_id {
         return HttpResponse::BadRequest()
@@ -231,10 +231,10 @@ pub async fn list_org_projects(
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
     let org_id = path.into_inner();
-    require_org_permission!(&state.sb_client, &org_id, &ext_data.user_id);
+    require_org_permission!(&state, &org_id, &ext_data.user_id);
 
     let is_owner = match permission_service::check_org_permission(
-        &state.sb_client,
+        &state,
         &org_id,
         &ext_data.user_id,
         OrgRole::Owner,

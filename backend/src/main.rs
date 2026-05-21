@@ -54,9 +54,6 @@ use crate::model::overlay::Conflict;
 use crate::model::overlay::OverlayViewRes;
 use crate::model::project::CreateProjectReq;
 use crate::model::project::CreateProjectRes;
-use crate::model::project::FileReadReq;
-
-use crate::model::project::DeleteProjectReq;
 use crate::model::project::ProjectMemberRes;
 use crate::model::project::ProjectRes;
 use crate::model::project::ProjectRole;
@@ -72,7 +69,6 @@ use actix_web::HttpServer;
 use actix_web::middleware::Logger;
 use dotenv::dotenv;
 use env_logger::Env;
-use log::error;
 use log::info;
 use log::warn;
 use model::task_type::TaskType;
@@ -152,8 +148,6 @@ async fn main() -> std::io::Result<()> {
                 TaskType,
                 CreateProjectReq,
                 ProjectRes,
-                FileReadReq,
-                DeleteProjectReq,
                 LoginPayload,
                 RegisterPayload,
                 RefreshReq,
