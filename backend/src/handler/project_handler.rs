@@ -1,11 +1,11 @@
+use std::collections::HashMap;
+
 use crate::macros::macros::require_org_permission;
 use crate::macros::macros::require_project_admin;
 use crate::macros::macros::require_project_permission;
 use crate::model::app_state::AppState;
 use crate::model::project::CreateProjectReq;
 use crate::model::project::CreateProjectRes;
-use crate::model::project::DeleteProjectReq;
-use crate::model::project::FileReadReq;
 use crate::model::project::UpdateProjectReq;
 use crate::model::user::MiddlewareData;
 use crate::repository::project_repository;
@@ -40,7 +40,7 @@ pub async fn create_project(
     }
 
     // Caller must belong to the org they're creating the project under.
-    require_org_permission!(&state.sb_client, &req.org_id, &ext_data.user_id);
+    require_org_permission!(&state, &req.org_id, &ext_data.user_id);
 
     let proj_id = Uuid::new_v4();
     let repo_path = state.repo_loc.join(proj_id.to_string());
@@ -84,7 +84,8 @@ pub async fn create_project(
     }
 
     if req.create_tasks_retroactively {
-        if let Err(e) = project_service::detect_and_create_tasks(&repo_path, &state.sb_client, &proj_id).await
+        if let Err(e) =
+            project_service::detect_and_create_tasks(&repo_path, &state.sb_client, &proj_id).await
         {
             error!("Failed creating project: {e}");
             return HttpResponse::BadRequest().finish();
@@ -108,7 +109,7 @@ pub async fn get_project_members(
 ) -> HttpResponse {
     let proj_id = path.into_inner();
 
-    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+    require_project_permission!(&state, &proj_id, &ext_data.user_id);
 
     let res = project_repository::get_project_members_full(&state.sb_client, &proj_id).await;
     match res {
@@ -140,7 +141,7 @@ pub async fn update_project(
     }
     let proj_id = path.into_inner();
 
-    require_project_admin!(&state.sb_client, &proj_id, &ext_data.user_id);
+    require_project_admin!(&state, &proj_id, &ext_data.user_id);
 
     let res =
         project_repository::update_project(&state.sb_client, &proj_id, req.into_inner()).await;
@@ -163,19 +164,16 @@ pub async fn update_project(
 )]
 pub async fn delete_project(
     state: web::Data<AppState>,
-    req: web::Json<DeleteProjectReq>,
     path: web::Path<Uuid>,
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
-    let req = req.into_inner();
     let proj_id = path.into_inner();
 
-    require_project_admin!(&state.sb_client, &proj_id, &ext_data.user_id);
-    let dest_path = state.repo_loc.join(req.id.to_string());
+    require_project_admin!(&state, &proj_id, &ext_data.user_id);
+    let dest_path = state.repo_loc.join(proj_id.to_string());
 
-    // TODO: what happens when one fails and one passes ?
     if let Err(e) = git_service::delete_repo(&dest_path).await {
-        error!("Failed deleting repository for {}: {e}", req.id);
+        error!("Failed deleting repository for {proj_id}: {e}");
         return HttpResponse::BadRequest()
             .content_type("text/plain; charset=utf-8")
             .body("Unable to delete repo");
@@ -203,7 +201,7 @@ pub async fn get_project(
 ) -> HttpResponse {
     let proj_id = path.into_inner();
 
-    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+    require_project_permission!(&state, &proj_id, &ext_data.user_id);
     let res = project_repository::find_project_by_id(&state.sb_client, proj_id.to_string()).await;
 
     let repo_path = state.repo_loc.join(proj_id.to_string());
@@ -216,7 +214,9 @@ pub async fn get_project(
     }
 
     // TODO: Should getting a project really fail when detecting and creating tasks fails?
-    if let Err(e) = project_service::detect_and_create_tasks(&repo_path, &state.sb_client, &proj_id).await {
+    if let Err(e) =
+        project_service::detect_and_create_tasks(&repo_path, &state.sb_client, &proj_id).await
+    {
         error!("Task detection failed. proj_id : {}, error: {e}", proj_id);
         return HttpResponse::BadRequest().body("Task detection failed");
     }
@@ -241,7 +241,7 @@ pub async fn get_project_activity(
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
     let proj_id = path.into_inner();
-    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+    require_project_permission!(&state, &proj_id, &ext_data.user_id);
     HttpResponse::Ok().json(state.compute_activity(&proj_id))
 }
 
@@ -257,7 +257,7 @@ pub async fn list_project_branches(
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
     let proj_id = path.into_inner();
-    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+    require_project_permission!(&state, &proj_id, &ext_data.user_id);
 
     let repo_path = state.repo_loc.join(proj_id.to_string());
     match git_service::list_remote_branches(&repo_path).await {
@@ -289,7 +289,7 @@ pub async fn list_project_tree(
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
     let proj_id = path.into_inner();
-    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
+    require_project_permission!(&state, &proj_id, &ext_data.user_id);
 
     let branch = match query.get("branch") {
         Some(b) => b.clone(),
@@ -307,33 +307,46 @@ pub async fn list_project_tree(
 }
 
 #[utoipa::path(
-    post,
+    get,
     path = "/api/projects/{id}/file",
     params(
         ("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+        ("branch" = String, Query, example = "main"),
+        ("path" = String, Query, example = "src/main.rs"),
     ),
-    request_body = FileReadReq,
     tag = "project",
 )]
 pub async fn get_project_file(
     state: web::Data<AppState>,
-    // <(project_id, branch)>
-    path: web::Path<(Uuid, String)>,
-    req: web::Json<FileReadReq>,
+    path: web::Path<Uuid>,
+    query: web::Query<HashMap<String, String>>,
     ext_data: web::ReqData<MiddlewareData>,
 ) -> HttpResponse {
-    let path = path.into_inner();
-    let proj_id = path.0;
-    let branch = path.1;
-    require_project_permission!(&state.sb_client, &proj_id, &ext_data.user_id);
-    let content = git_service::read_file(
-        std::path::Path::new(&state.repo_loc.join(proj_id.to_string())),
-        branch.as_str(),
-        std::path::Path::new(&req.file_path),
-    )
-    .await;
+    let proj_id = path.into_inner();
+    require_project_permission!(&state, &proj_id, &ext_data.user_id);
 
-    HttpResponse::Ok()
-        .insert_header((CONTENT_TYPE, "text/plain; charset=utf-8"))
-        .body(content.unwrap())
+    let branch = match query.get("branch") {
+        Some(b) => b.clone(),
+        None => return HttpResponse::BadRequest().body("missing branch query param"),
+    };
+    let file_path = match query.get("path") {
+        Some(p) => p.clone(),
+        None => return HttpResponse::BadRequest().body("missing path query param"),
+    };
+
+    match git_service::read_file(
+        &state.repo_loc.join(proj_id.to_string()),
+        &branch,
+        std::path::Path::new(&file_path),
+    )
+    .await
+    {
+        Ok(content) => HttpResponse::Ok()
+            .insert_header((CONTENT_TYPE, "text/plain; charset=utf-8"))
+            .body(content),
+        Err(e) => {
+            error!("Failed reading {file_path}@{branch} for proj {proj_id}: {e}");
+            HttpResponse::BadRequest().body("Failed reading file")
+        }
+    }
 }
