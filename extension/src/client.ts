@@ -1,12 +1,13 @@
 import axios, { type AxiosInstance } from "axios";
 import { AuthManager } from "./auth";
 
-export interface ProjectMember {
+export interface LightningGitProject {
   id: string;
-  username: string;
+  name: string;
+  repo_url: string;
 }
 
-export interface LightningGitProject {
+export interface Org {
   id: string;
   name: string;
 }
@@ -34,20 +35,48 @@ export class LightningGitClient {
   ) {
     this.http = axios.create({
       baseURL: apiUrl,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
     });
 
     this.http.interceptors.request.use(async (config) => {
       const token = await this.authManager.getToken();
-
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
-
       return config;
     });
+
+    // on 401, try a single-flight refresh once; if it works, retry the original
+    // request. if refresh fails, the AuthManager has already cleared the tokens.
+    this.http.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        if (!axios.isAxiosError(error) || error.response?.status !== 401) {
+          return Promise.reject(error);
+        }
+        const original = error.config as (typeof error.config & { _retried?: boolean }) | undefined;
+        const isRefreshCall = original?.url?.endsWith("/refresh");
+        if (!original || original._retried || isRefreshCall) {
+          return Promise.reject(error);
+        }
+        original._retried = true;
+        const fresh = await this.authManager.refresh();
+        if (!fresh) return Promise.reject(error);
+        original.headers = original.headers || {};
+        original.headers.Authorization = `Bearer ${fresh}`;
+        return this.http.request(original);
+      },
+    );
+  }
+
+  async listMyOrgs(): Promise<Org[]> {
+    const response = await this.http.get<Org[]>("/api/orgs/mine");
+    return response.data;
+  }
+
+  async listOrgProjects(orgId: string): Promise<LightningGitProject[]> {
+    const response = await this.http.get<LightningGitProject[]>(`/api/orgs/${orgId}/projects`);
+    return response.data;
   }
 
   async createProject(repoUrl: string, name: string, orgId: string): Promise<string> {
@@ -57,7 +86,6 @@ export class LightningGitClient {
       org_id: orgId,
       create_tasks_retroactively: false,
     });
-
     return response.data as string;
   }
 
@@ -66,45 +94,34 @@ export class LightningGitClient {
     return response.data as LightningGitProject;
   }
 
-  async getProjectMembers(projectId: string): Promise<ProjectMember[]> {
-    const response = await this.http.get(`/api/projects/${projectId}/members`);
-    return response.data as ProjectMember[];
-  }
-
-  async updateProject(projectId: string, name: string, userIds: string[]): Promise<void> {
-    await this.http.put(`/api/projects/${projectId}`, {
-      name,
-      user_ids: userIds,
-    });
-  }
-
   async createOverlay(projectId: string, userId: string, branch: string, fileName: string): Promise<void> {
+    // branch goes as query param; file_name carries slashes in path
+    const encodedFile = fileName.split("/").map(encodeURIComponent).join("/");
     try {
-      await this.http.put(`/api/overlay/${projectId}/${userId}/${encodeURIComponent(fileName)}/${branch}`);
+      await this.http.put(
+        `/api/overlay/${projectId}/${userId}/${encodedFile}?branch=${encodeURIComponent(branch)}`,
+      );
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 400) {
         return;
       }
-
       throw error;
     }
   }
 
   async getOverlayWsUrl(projectId: string, userId: string, fileName: string): Promise<string> {
     const token = await this.authManager.getToken();
-    const baseUrl = `${this.wsUrl}/api/overlay/ws/${projectId}/${userId}/${encodeURIComponent(fileName)}`;
-
+    const encodedFile = fileName.split("/").map(encodeURIComponent).join("/");
+    const baseUrl = `${this.wsUrl}/api/overlay/ws/${projectId}/${userId}/${encodedFile}`;
     return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
   }
 
   async getMergeConflicts(projectId: string, userId: string, fileName: string): Promise<MergeConflict[]> {
     try {
-      const response = await this.http.get(`/api/merge/${projectId}/${encodeURIComponent(fileName)}`, {
-        params: {
-          user_id: userId,
-        },
+      const encodedFile = fileName.split("/").map(encodeURIComponent).join("/");
+      const response = await this.http.get(`/api/merge/${projectId}/${encodedFile}`, {
+        params: { user_id: userId },
       });
-
       return response.data as MergeConflict[];
     } catch {
       return [];
