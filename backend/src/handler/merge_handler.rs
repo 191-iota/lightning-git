@@ -8,6 +8,8 @@ use crate::model::user::MiddlewareData;
 use crate::service::merge_service;
 use uuid::Uuid;
 
+/// Predicted merge conflicts for one file across all live branches.
+/// Decomposes each branch's diff into hunks and reports overlapping line ranges.
 #[utoipa::path(
     get,
     path = "/api/overlay/merge/{proj_id}/{file_name}",

@@ -13,6 +13,8 @@ use crate::model::app_state::AppState;
 use crate::model::overlay::extract_overlay;
 use crate::model::overlay::OverlayChangeReq;
 
+/// Project-wide activity WebSocket. Pushes a Vec<ActiveEdit> snapshot on
+/// connect and on every per-file change anywhere in the project.
 #[utoipa::path(
     get,
     path = "/api/projects/{project_id}/activity/ws",
@@ -63,6 +65,8 @@ pub async fn ws_project_activity(
     res
 }
 
+/// Per-file overlay WebSocket. Inbound: OverlayChangeReq updates from the
+/// editing user. Outbound: every other subscriber's changes, self-filtered.
 #[utoipa::path(
     get,
     path = "/api/ws/{project_id}/{user_id}/{file_name}",

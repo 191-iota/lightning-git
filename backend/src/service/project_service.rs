@@ -12,10 +12,14 @@ use crate::repository::task_repository;
 
 use super::git_service;
 
+/// Splice an OAuth access token into an https GitHub URL so git clone can
+/// reach private repos without prompting for credentials.
 pub fn inject_token(repo_url: &str, token: &str) -> String {
     repo_url.replacen("https://", &format!("https://x-access-token:{token}@"), 1)
 }
 
+/// Derive Kanban tasks from the project's remote branches.
+/// Skips main, master, HEAD, and any branch that already has a task row.
 pub async fn detect_and_create_tasks(
     repo_path: &Path,
     db: &SupabaseClient,

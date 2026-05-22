@@ -15,6 +15,7 @@ use log::error;
 use uuid::Uuid;
 use validator::Validate;
 
+/// Create an organization. The caller is registered as its owner.
 #[utoipa::path(
     post,
     path = "/api/orgs",
@@ -45,6 +46,7 @@ pub async fn create_org(
     }
 }
 
+/// List organizations the caller belongs to, including their role per org.
 #[utoipa::path(
     get,
     path = "/api/orgs/mine",
@@ -63,6 +65,7 @@ pub async fn list_my_orgs(
     }
 }
 
+/// Fetch a single organization by id. Requires org membership.
 #[utoipa::path(
     get,
     path = "/api/orgs/{id}",
@@ -86,6 +89,7 @@ pub async fn get_org(
     }
 }
 
+/// Rename an organization. Owner only.
 #[utoipa::path(
     put,
     path = "/api/orgs/{id}",
@@ -114,6 +118,7 @@ pub async fn update_org(
     }
 }
 
+/// Delete an organization and cascade its projects. Owner only.
 #[utoipa::path(
     delete,
     path = "/api/orgs/{id}",
@@ -137,6 +142,7 @@ pub async fn delete_org(
     }
 }
 
+/// List all members of an organization with their roles. Requires org membership.
 #[utoipa::path(
     get,
     path = "/api/orgs/{id}/members",
@@ -160,6 +166,7 @@ pub async fn list_org_members(
     }
 }
 
+/// Add a member to the organization with a chosen role. Owner only.
 #[utoipa::path(
     post,
     path = "/api/orgs/{id}/members",
@@ -188,6 +195,8 @@ pub async fn add_org_member(
     }
 }
 
+/// Remove a member from the organization. Owner only.
+/// Owners cannot remove themselves; deleting the org is the supported path.
 #[utoipa::path(
     delete,
     path = "/api/orgs/{id}/members/{user_id}",
@@ -219,6 +228,8 @@ pub async fn remove_org_member(
     }
 }
 
+/// List projects in the organization. Owners see every project,
+/// members see only the projects they belong to.
 #[utoipa::path(
     get,
     path = "/api/orgs/{id}/projects",

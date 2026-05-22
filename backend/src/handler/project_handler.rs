@@ -22,6 +22,8 @@ use log::error;
 use uuid::Uuid;
 use validator::Validate;
 
+/// Create a project under an org, clone the repo, and seed the creator as admin.
+/// Optionally also derives one Kanban task per existing remote branch.
 #[utoipa::path(
     post,
     path = "/api/projects",
@@ -96,6 +98,7 @@ pub async fn create_project(
     HttpResponse::Ok().json(CreateProjectRes { proj_id })
 }
 
+/// List a project's members with display names and roles.
 #[utoipa::path(
     get,
     path = "/api/projects/{id}/members",
@@ -123,6 +126,8 @@ pub async fn get_project_members(
     }
 }
 
+/// Add a member to the project with a chosen role. Project admin only.
+/// Rejects duplicates with 409.
 #[utoipa::path(
     post,
     path = "/api/projects/{id}/members",
@@ -171,6 +176,8 @@ pub async fn add_project_member(
     }
 }
 
+/// Remove a member from the project. Project admin only.
+/// Refuses to remove the last admin; transfer admin rights first.
 #[utoipa::path(
     delete,
     path = "/api/projects/{id}/members/{user_id}",
@@ -226,6 +233,7 @@ pub async fn remove_project_member(
     }
 }
 
+/// Rename a project and add any new members listed in the body. Admin only.
 #[utoipa::path(
     put,
     path = "/api/projects/{id}",
@@ -259,6 +267,7 @@ pub async fn update_project(
     }
 }
 
+/// Delete a project, remove the local clone, and cascade tasks. Admin only.
 #[utoipa::path(
     get,
     path = "/api/projects/{id}",
@@ -291,6 +300,8 @@ pub async fn delete_project(
     }
 }
 
+/// Fetch project metadata and refresh remote refs.
+/// Also re-derives Kanban tasks from current remote branches so the board stays in sync.
 #[utoipa::path(
     get,
     path = "/api/projects/{id}",
@@ -332,6 +343,8 @@ pub async fn get_project(
     }
 }
 
+/// HTTP snapshot of who is currently editing what in this project.
+/// The WS endpoint /activity/ws emits the same shape live; this is for one-shot polls.
 #[utoipa::path(
     get,
     path = "/api/projects/{id}/activity",
@@ -350,6 +363,7 @@ pub async fn get_project_activity(
     HttpResponse::Ok().json(state.compute_activity(&proj_id))
 }
 
+/// Sorted list of remote-tracking branch names for the project's clone.
 #[utoipa::path(
     get,
     path = "/api/projects/{id}/branches",
@@ -378,6 +392,7 @@ pub async fn list_project_branches(
     }
 }
 
+/// All tracked file paths on the given branch, used to render the OverlayView tree.
 #[utoipa::path(
     get,
     path = "/api/projects/{id}/tree",
@@ -411,6 +426,7 @@ pub async fn list_project_tree(
     }
 }
 
+/// Read a single file's text content from a given branch, served as text/plain.
 #[utoipa::path(
     get,
     path = "/api/projects/{id}/file",

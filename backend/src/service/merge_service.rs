@@ -16,6 +16,8 @@ use crate::model::overlay::Hunk;
 use super::git_service;
 use super::overlay_service::extract_overlay_file_contents;
 
+/// Predict merge conflicts on one file across all live branches.
+/// Diffs each branch (live overlay or committed) against main and reports overlapping hunks.
 pub async fn calculate_live_diff(
     file_name: String,
     project_id: Uuid,
@@ -24,17 +26,27 @@ pub async fn calculate_live_diff(
 ) -> Result<Vec<Conflict>, LGitIoError> {
     let file_path = Path::new(&file_name);
 
-    // 1. Retrieve base content from the base branch
+    // 1. Retrieve base content from the base branch (read_file already fetched origin)
     let base_content = git_service::read_file(base, "main", file_path)
         .await
         .unwrap_or_else(|_| String::new());
+
+    // piggyback the cache refresh: now that we have fresh main, update the overlay's
+    // cached original_content and re-flag divergence so the activity view stays honest
+    // after pushes. Then push a fresh snapshot to activity subscribers.
+    state.refresh_overlay_base(&project_id, &file_name, base_content.clone());
+    let activity_tx = state
+        .repo_states
+        .get(&project_id)
+        .map(|p| p.activity_tx.clone());
+    if let Some(tx) = activity_tx {
+        let _ = tx.send(state.compute_activity(&project_id));
+    }
 
     let mut active_branches = git_service::list_remote_branches(base).await?;
 
     // 2. Get all active remote branches
     let file_overlays = extract_overlay_file_contents(file_name.clone(), project_id, state)?;
-    println!("{}, {}", file_overlays.len(), file_overlays[0].1);
-    active_branches.iter().for_each(|b| println!("{b}"));
     // <(branch_name, content)>
     let mut contents: Vec<(String, String)> = Vec::new();
     // Overlays take precedence; remove redundant branches
@@ -45,8 +57,6 @@ pub async fn calculate_live_diff(
         // Add overlay contents
         contents.push((f.0, f.1));
     });
-
-    active_branches.iter().for_each(|b| println!("{b}"));
 
     // Add branch contents
     let mut branch_contents: Vec<(String, String)> = stream::iter(active_branches.iter().cloned())
@@ -67,18 +77,14 @@ pub async fn calculate_live_diff(
 
     // 7. Compute diff against base for combined contents
     let diff = compute_combined_diff(base_content, contents);
-    for h in &diff {
-        println!(
-            "hunk: branch={} start={} end={}",
-            h.branch, h.base_start, h.base_end
-        );
-    }
     // 8. Compute merge conflicts based on each diff through overlap checks
     let conflicts = compute_conflicts(diff);
 
     Ok(conflicts)
 }
 
+/// Decompose a single branch's diff against base into contiguous hunks of
+/// changed lines, tagged with the branch name for later overlap analysis.
 pub fn compute_combined_diff(
     base_content: String,
     branch_contents: Vec<(String, String)>,
@@ -141,6 +147,8 @@ pub fn compute_combined_diff(
     all_hunks
 }
 
+/// Group hunks whose base line ranges overlap into Conflict clusters.
+/// Transitive: if A overlaps B and B overlaps C, all three end up in one conflict.
 pub fn compute_conflicts(all_hunks: Vec<Hunk>) -> Vec<Conflict> {
     if all_hunks.is_empty() {
         return Vec::new();
