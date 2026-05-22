@@ -1,4 +1,3 @@
-use actix_web::HttpResponse;
 use dashmap::DashMap;
 use dashmap::mapref::one::Ref;
 use serde::Deserialize;
@@ -7,23 +6,6 @@ use tokio::sync::broadcast;
 use tokio::time::Instant;
 use utoipa::ToSchema;
 use uuid::Uuid;
-use validator::Validate;
-
-#[derive(thiserror::Error, Debug)]
-pub enum OverlayError {
-    #[error("overlay already exists")]
-    Exists,
-    #[error("internal error")]
-    Internal,
-    #[error("overlay not found")]
-    NotFound,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub enum OverlayWsMsg {
-    View(OverlayViewRes),
-    Change(OverlayChangeReq),
-}
 
 // Temporary storage for live changes
 #[derive(Clone)]
@@ -39,7 +21,24 @@ pub struct Overlay {
     pub original_content: String,
     // Key: User id; Value: their content
     pub user_contents: DashMap<Uuid, UserOverlay>,
-    pub tx: broadcast::Sender<OverlayWsMsg>,
+    pub tx: broadcast::Sender<OverlayChangeReq>,
+    // In-memory line comments. Lost on restart.
+    pub comments: DashMap<Uuid, Comment>,
+}
+
+#[derive(Serialize, Deserialize, Clone, ToSchema)]
+pub struct Comment {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub line: u32,
+    pub text: String,
+    pub created_at: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct CreateCommentReq {
+    pub line: u32,
+    pub text: String,
 }
 
 #[derive(Clone)]
@@ -48,9 +47,6 @@ pub struct UserOverlay {
     pub branch: String,
     pub edited_sections: (u32, u32),
     pub updated_at: Instant,
-    // set during the Change handler so compute_activity doesnt have to compare
-    // user content with original_content (O(content_size)) on every snapshot
-    pub is_divergent: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, ToSchema)]
@@ -112,25 +108,6 @@ pub fn extract_overlay<'a>(
     proj_state.overlays.get(file_name)
 }
 
-// Mapped Overlayerrors to HTTP-Responses
-impl actix_web::ResponseError for OverlayError {
-    fn status_code(&self) -> actix_web::http::StatusCode {
-        match self {
-            OverlayError::NotFound => actix_web::http::StatusCode::NOT_FOUND,
-            OverlayError::Exists => actix_web::http::StatusCode::BAD_REQUEST,
-            OverlayError::Internal => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-
-    fn error_response(&self) -> HttpResponse {
-        match self {
-            OverlayError::NotFound => HttpResponse::BadRequest().body(self.to_string()),
-            OverlayError::Exists => HttpResponse::BadRequest().body(self.to_string()),
-            OverlayError::Internal => HttpResponse::InternalServerError().finish(),
-        }
-    }
-}
-
 impl UserOverlay {
     pub fn new(branch: String, content: String) -> Self {
         Self {
@@ -138,7 +115,6 @@ impl UserOverlay {
             edited_sections: (0, 0),
             branch,
             updated_at: Instant::now(),
-            is_divergent: false,
         }
     }
 }
