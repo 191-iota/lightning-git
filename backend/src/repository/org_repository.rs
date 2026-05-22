@@ -7,7 +7,7 @@ use supabase_rs::SupabaseClient;
 use uuid::Uuid;
 
 use crate::error::custom_errors::RepoError;
-use crate::model::org::{OrgMemberRes, OrgRes, OrgRole};
+use crate::model::org::{MyOrgRes, OrgMemberRes, OrgRes, OrgRole};
 
 pub async fn save_org(
     db: &SupabaseClient,
@@ -136,11 +136,11 @@ pub async fn remove_org_member(
 pub async fn list_user_orgs(
     db: &SupabaseClient,
     user_id: &Uuid,
-) -> Result<Vec<OrgRes>, RepoError> {
+) -> Result<Vec<MyOrgRes>, RepoError> {
     let member_rows = db
         .select("organization_members")
         .eq("user_id", user_id.to_string().as_str())
-        .columns(vec!["org_id"])
+        .columns(vec!["org_id", "role"])
         .execute()
         .await
         .map_err(|e| {
@@ -152,26 +152,33 @@ pub async fn list_user_orgs(
         return Ok(vec![]);
     }
 
-    let org_ids: Vec<String> = member_rows
-        .iter()
-        .filter_map(|r| r.get("org_id").and_then(|v| v.as_str()).map(String::from))
-        .collect();
+    // Build a (org_id -> role) lookup so we can attach the user's role to each org
+    let mut role_by_org: std::collections::HashMap<String, OrgRole> =
+        std::collections::HashMap::new();
+    for r in &member_rows {
+        let org_id = r.get("org_id").and_then(|v| v.as_str()).unwrap_or("");
+        let role_str = r.get("role").and_then(|v| v.as_str()).unwrap_or("member");
+        let role = OrgRole::from_str(role_str).unwrap_or(OrgRole::Member);
+        role_by_org.insert(org_id.to_string(), role);
+    }
+
+    let org_ids: Vec<&str> = role_by_org.keys().map(|s| s.as_str()).collect();
 
     let orgs = db
         .select("organization")
-        .in_(
-            "id",
-            &org_ids.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-        )
+        .in_("id", &org_ids)
         .columns(vec!["id", "name"])
         .execute()
         .await
         .map_err(|e| RepoError::ExtractionError(e.to_string()))?;
 
-    Ok(orgs
-        .into_iter()
-        .filter_map(|row| serde_json::from_value(row).ok())
-        .collect())
+    let mut out: Vec<MyOrgRes> = Vec::with_capacity(orgs.len());
+    for row in orgs {
+        let Ok(base) = serde_json::from_value::<OrgRes>(row) else { continue };
+        let role = role_by_org.get(&base.id.to_string()).copied().unwrap_or(OrgRole::Member);
+        out.push(MyOrgRes { id: base.id, name: base.name, role });
+    }
+    Ok(out)
 }
 
 pub async fn list_org_members(
