@@ -2462,10 +2462,12 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-rustls",
+ "hyper-tls",
  "hyper-util",
  "js-sys",
  "log",
  "mime",
+ "native-tls",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -2476,6 +2478,7 @@ dependencies = [
  "serde_json",
  "sync_wrapper",
  "tokio",
+ "tokio-native-tls",
  "tokio-rustls",
  "tower",
  "tower-http",
@@ -2997,18 +3000,18 @@ dependencies = [
 
 [[package]]
 name = "supabase_rs"
-version = "0.5.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e407fa08be22b27f31c9270730f898afaca41a3bcc2de37884ba1ed6a274f3f"
+checksum = "c897e9410dadfd3d625d7ec6a1516255d8394cc4494dd005a60eb51beaff9f6f"
 dependencies = [
  "anyhow",
  "chrono",
  "cruet",
  "dotenv",
  "postgres",
- "rand 0.9.4",
+ "rand 0.10.1",
  "regex",
- "reqwest 0.12.28",
+ "reqwest 0.13.3",
  "rust_decimal",
  "serde",
  "serde_json",
