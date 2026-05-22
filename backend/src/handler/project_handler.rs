@@ -4,8 +4,10 @@ use crate::macros::macros::require_org_permission;
 use crate::macros::macros::require_project_admin;
 use crate::macros::macros::require_project_permission;
 use crate::model::app_state::AppState;
+use crate::model::project::AddProjectMemberReq;
 use crate::model::project::CreateProjectReq;
 use crate::model::project::CreateProjectRes;
+use crate::model::project::ProjectRole;
 use crate::model::project::UpdateProjectReq;
 use crate::model::user::MiddlewareData;
 use crate::repository::project_repository;
@@ -117,6 +119,109 @@ pub async fn get_project_members(
         Err(e) => {
             error!("Failed getting project members: {e}");
             HttpResponse::BadRequest().body("Failed processing request")
+        }
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/projects/{id}/members",
+    params(("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")),
+    request_body = AddProjectMemberReq,
+    tag = "project",
+)]
+pub async fn add_project_member(
+    state: web::Data<AppState>,
+    path: web::Path<Uuid>,
+    req: web::Json<AddProjectMemberReq>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    if let Err(e) = req.validate() {
+        return HttpResponse::BadRequest().json(e);
+    }
+    let proj_id = path.into_inner();
+    require_project_admin!(&state, &proj_id, &ext_data.user_id);
+
+    let req = req.into_inner();
+
+    match project_repository::get_project_member_role(&state.sb_client, &proj_id, &req.user_id)
+        .await
+    {
+        Ok(Some(_)) => return HttpResponse::Conflict().body("User is already a project member"),
+        Ok(None) => {}
+        Err(e) => {
+            error!("Failed checking existing project member: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    }
+
+    match project_repository::add_user_to_project(
+        &state.sb_client,
+        &proj_id,
+        &req.user_id,
+        req.role,
+    )
+    .await
+    {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(e) => {
+            error!("Failed adding project member: {e}");
+            HttpResponse::BadRequest().body("Failed adding project member")
+        }
+    }
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/projects/{id}/members/{user_id}",
+    params(
+        ("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+        ("user_id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+    ),
+    tag = "project",
+)]
+pub async fn remove_project_member(
+    state: web::Data<AppState>,
+    path: web::Path<(Uuid, Uuid)>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    let (proj_id, target_user) = path.into_inner();
+    require_project_admin!(&state, &proj_id, &ext_data.user_id);
+
+    let target_role =
+        match project_repository::get_project_member_role(&state.sb_client, &proj_id, &target_user)
+            .await
+        {
+            Ok(Some(role)) => role,
+            Ok(None) => return HttpResponse::NotFound().body("Member not in project"),
+            Err(e) => {
+                error!("Failed reading project member role: {e}");
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
+
+    if target_user == ext_data.user_id && matches!(target_role, ProjectRole::Admin) {
+        let admin_count =
+            match project_repository::count_project_admins(&state.sb_client, &proj_id).await {
+                Ok(n) => n,
+                Err(e) => {
+                    error!("Failed counting admins: {e}");
+                    return HttpResponse::InternalServerError().finish();
+                }
+            };
+        if admin_count <= 1 {
+            return HttpResponse::BadRequest()
+                .body("Cannot remove the last admin; delete the project or promote another admin first");
+        }
+    }
+
+    match project_repository::remove_user_from_project(&state.sb_client, &proj_id, &target_user)
+        .await
+    {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(e) => {
+            error!("Failed removing project member: {e}");
+            HttpResponse::BadRequest().body("Failed removing project member")
         }
     }
 }
