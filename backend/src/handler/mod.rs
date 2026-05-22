@@ -1,3 +1,4 @@
+pub mod comment_handler;
 pub mod config_handler;
 pub mod merge_handler;
 pub mod org_handler;

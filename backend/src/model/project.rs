@@ -68,6 +68,13 @@ pub struct ProjectMemberRes {
     pub role: ProjectRole,
 }
 
+#[derive(Deserialize, Validate, ToSchema)]
+pub struct AddProjectMemberReq {
+    #[schema(value_type = String)]
+    pub user_id: Uuid,
+    pub role: ProjectRole,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct CreateProjectRes {
     pub proj_id: Uuid,
