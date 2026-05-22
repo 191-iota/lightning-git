@@ -178,6 +178,79 @@ pub async fn add_user_to_project(
     Ok(handled_result)
 }
 
+pub async fn remove_user_from_project(
+    db: &SupabaseClient,
+    project_id: &Uuid,
+    user_id: &Uuid,
+) -> Result<(), RepoError> {
+    let rows = db
+        .select("project_members")
+        .eq("project_id", project_id.to_string().as_str())
+        .eq("user_id", user_id.to_string().as_str())
+        .columns(vec!["id"])
+        .execute()
+        .await
+        .map_err(|e| {
+            error!("Failed locating project member row: {e}");
+            RepoError::ExtractionError(String::from("Failed locating project member"))
+        })?;
+
+    let row_id = rows
+        .first()
+        .and_then(|r| r.get("id").and_then(|v| v.as_str()))
+        .ok_or_else(|| RepoError::ExtractionError(String::from("Member not in project")))?
+        .to_string();
+
+    db.delete("project_members", row_id.as_str())
+        .await
+        .map_err(|e| {
+            error!("Failed removing project member: {e}");
+            RepoError::DeletionError(String::from("Failed removing project member"))
+        })?;
+
+    Ok(())
+}
+
+pub async fn count_project_admins(
+    db: &SupabaseClient,
+    project_id: &Uuid,
+) -> Result<usize, RepoError> {
+    let rows = db
+        .select("project_members")
+        .eq("project_id", project_id.to_string().as_str())
+        .eq("role", "admin")
+        .columns(vec!["user_id"])
+        .execute()
+        .await
+        .map_err(|e| {
+            error!("Failed counting project admins: {e}");
+            RepoError::ExtractionError(String::from("Failed counting project admins"))
+        })?;
+    Ok(rows.len())
+}
+
+pub async fn get_project_member_role(
+    db: &SupabaseClient,
+    project_id: &Uuid,
+    user_id: &Uuid,
+) -> Result<Option<ProjectRole>, RepoError> {
+    let rows = db
+        .select("project_members")
+        .eq("project_id", project_id.to_string().as_str())
+        .eq("user_id", user_id.to_string().as_str())
+        .columns(vec!["role"])
+        .execute()
+        .await
+        .map_err(|e| {
+            error!("Failed reading project member role: {e}");
+            RepoError::ExtractionError(String::from("Failed reading project member role"))
+        })?;
+
+    let Some(row) = rows.first() else { return Ok(None) };
+    let role_str = row.get("role").and_then(|v| v.as_str()).unwrap_or("member");
+    Ok(Some(ProjectRole::from_str(role_str).unwrap_or(ProjectRole::Member)))
+}
+
 pub async fn delete_project(client: &SupabaseClient, id: String) -> Result<(), RepoError> {
     client.delete("project", id.as_str()).await.map_err(|e| {
         error!("Failed deleting project: {e}");
