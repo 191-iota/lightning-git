@@ -93,6 +93,8 @@ pub async fn get_project_members_id(
         .collect())
 }
 
+/// Project members joined with their display names from the profiles table.
+/// Two queries: one for membership rows, one for the names in a single in_ filter.
 pub async fn get_project_members_full(
     db: &SupabaseClient,
     project_id: &Uuid,
@@ -178,6 +180,8 @@ pub async fn add_user_to_project(
     Ok(handled_result)
 }
 
+/// Look up the project_members join-row id then delete by row id.
+/// Two-step because supabase_rs doesn't accept compound predicates on delete.
 pub async fn remove_user_from_project(
     db: &SupabaseClient,
     project_id: &Uuid,
@@ -211,6 +215,7 @@ pub async fn remove_user_from_project(
     Ok(())
 }
 
+/// How many admins a project has. Used to refuse removing the last admin.
 pub async fn count_project_admins(
     db: &SupabaseClient,
     project_id: &Uuid,
@@ -229,6 +234,7 @@ pub async fn count_project_admins(
     Ok(rows.len())
 }
 
+/// The user's role on the project, or None if they are not a member.
 pub async fn get_project_member_role(
     db: &SupabaseClient,
     project_id: &Uuid,

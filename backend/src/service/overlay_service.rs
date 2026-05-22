@@ -8,8 +8,8 @@ use crate::model::overlay::Overlay;
 use crate::model::overlay::OverlayViewRes;
 use crate::model::overlay::UserOverlayRes;
 
-/// snapshots the dash‑map state and returns a serializable OverlayViewRes
-/// which in turn contains each user-state
+/// Snapshot the live overlay state for one file into a serializable response.
+/// Returns the caller's own content plus every other user's content separately.
 pub async fn build_overlay_response(overlay: &Overlay, user_id: Uuid) -> OverlayViewRes {
     let user_content = overlay
         .user_contents
@@ -39,9 +39,8 @@ pub async fn build_overlay_response(overlay: &Overlay, user_id: Uuid) -> Overlay
     }
 }
 
-// PERF: revisit clone, probably unnecessary
-// Returns a Vec and each entry contains a (String, Strin) tuple. The first element of the tuple
-// holds the branchname and the second element holds its contents
+/// Collect the live content of one file grouped by branch.
+/// Used by the merge service to diff each branch's tip against main.
 pub fn extract_overlay_file_contents(
     file_name: String,
     project_id: Uuid,

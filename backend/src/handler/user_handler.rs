@@ -16,9 +16,11 @@ use supabase_auth::models::SignUpWithPasswordOptions;
 use uuid::Uuid;
 use validator::Validate;
 
+/// Resolve a username to a user id and display name.
+/// Used by the member invite flows to look users up by handle.
 #[utoipa::path(
-    get, 
-    path = "/user/{username}", 
+    get,
+    path = "/user/{username}",
     params(("username" = String, Path, example = "tom")),
     tag = "user",
 )]
@@ -35,6 +37,8 @@ pub async fn get_user_id_by_username(
     }
 }
 
+/// Sign a new user up via Supabase Auth, storing their chosen username
+/// in the user metadata for later display in the app.
 #[utoipa::path(post, path = "/register", tag = "user")]
 pub async fn register(
     body: web::Json<RegisterPayload>,
@@ -85,6 +89,7 @@ pub async fn register(
     }
 }
 
+/// Exchange email and password for an access plus refresh token via Supabase.
 #[utoipa::path(
     post,
     path = "/login",
@@ -134,6 +139,7 @@ pub async fn login(body: web::Json<LoginPayload>, state: web::Data<AppState>) ->
     })
 }
 
+/// Refresh an expired access token using a stored refresh token.
 #[utoipa::path(
     post,
     path = "/refresh",
@@ -156,8 +162,8 @@ pub async fn refresh_token(
     }
 }
 
-// GET /auth/github?user_id=<uuid>
-// Redirects browser to GitHub's OAuth consent screen
+/// Redirect to GitHub's OAuth consent screen with the user id as state.
+/// First leg of the flow that lets the backend act on private repos for this user.
 pub async fn github_auth(state: web::Data<AppState>, user_id: web::Path<Uuid>) -> HttpResponse {
     // state.github_client_id comes from env
     // redirect_uri = "{your_api_url}/auth/github/callback"
@@ -171,8 +177,8 @@ pub async fn github_auth(state: web::Data<AppState>, user_id: web::Path<Uuid>) -
         .finish()
 }
 
-// GET /auth/github/callback?code=<code>&state=<user_id>
-// GitHub redirects here after user consents
+/// GitHub OAuth callback. Exchanges the code for an access token and stores
+/// it against the user id passed through the state parameter.
 pub async fn github_callback(
     state: web::Data<AppState>,
     query: web::Query<GithubCallbackQuery>,

@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::error::custom_errors::RepoError;
 use crate::model::org::{MyOrgRes, OrgMemberRes, OrgRes, OrgRole};
 
+/// Insert a new organization and add the creator as its owner.
 pub async fn save_org(
     db: &SupabaseClient,
     id: &Uuid,
@@ -98,13 +99,14 @@ pub async fn add_org_member(
     })
 }
 
+/// Locate the membership row by (org_id, user_id) and delete by row id.
+/// Two-step because supabase_rs doesn't accept compound predicates on delete.
 pub async fn remove_org_member(
     db: &SupabaseClient,
     org_id: &Uuid,
     user_id: &Uuid,
 ) -> Result<(), RepoError> {
-    // Look up the membership row's synthetic id, then delete by it — same
-    // pattern as delete_task / delete_project.
+    // Look up the membership row's synthetic id, then delete by it.
     let rows = db
         .select("organization_members")
         .eq("org_id", org_id.to_string().as_str())
@@ -133,6 +135,8 @@ pub async fn remove_org_member(
         })
 }
 
+/// Organizations the user belongs to, each annotated with their role.
+/// Two queries: membership rows plus org metadata, joined in memory.
 pub async fn list_user_orgs(
     db: &SupabaseClient,
     user_id: &Uuid,
@@ -181,6 +185,7 @@ pub async fn list_user_orgs(
     Ok(out)
 }
 
+/// Members of the organization joined with their display names from profiles.
 pub async fn list_org_members(
     db: &SupabaseClient,
     org_id: &Uuid,

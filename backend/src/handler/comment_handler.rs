@@ -11,6 +11,8 @@ use crate::model::overlay::Comment;
 use crate::model::overlay::CreateCommentReq;
 use crate::model::user::MiddlewareData;
 
+/// Snapshot of in-memory line comments on a single file.
+/// Returns an empty list if the project or file overlay has no comments.
 #[utoipa::path(
     get,
     path = "/api/comments/{proj_id}/{file_name}",
@@ -43,6 +45,7 @@ pub async fn list_comments(
     HttpResponse::Ok().json(comments)
 }
 
+/// Add a comment to a line of a file. Stored in memory and lost on restart.
 #[utoipa::path(
     post,
     path = "/api/comments/{proj_id}/{file_name}",
@@ -91,6 +94,7 @@ pub async fn create_comment(
     HttpResponse::Ok().json(comment)
 }
 
+/// Delete a comment. Only the original author may delete their own comment.
 #[utoipa::path(
     delete,
     path = "/api/comments/{proj_id}/{comment_id}/{file_name}",

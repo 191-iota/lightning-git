@@ -81,6 +81,8 @@ fn role_satisfies_project(actual: &str, required: ProjectRole) -> bool {
     }
 }
 
+/// True if the user has at least the required role on the project, with
+/// org owners getting implicit access regardless of project membership.
 pub async fn check_project_permission(
     state: &AppState,
     project_id: &Uuid,
@@ -116,6 +118,7 @@ pub async fn check_project_permission(
     Ok(role_satisfies_project(role_str, required_role))
 }
 
+/// True if the user has at least the required role in the organization.
 pub async fn check_org_permission(
     state: &AppState,
     org_id: &Uuid,
