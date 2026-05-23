@@ -26,10 +26,13 @@ pub async fn calculate_live_diff(
 ) -> Result<Vec<Conflict>, LGitIoError> {
     let file_path = Path::new(&file_name);
 
-    // 1. Retrieve base content from the base branch (read_file already fetched origin)
-    let base_content = git_service::read_file(base, "main", file_path)
-        .await
-        .unwrap_or_else(|_| String::new());
+    // 1. Retrieve base content from the base branch (read_file already fetched origin).
+    // If the file is a draft (not yet committed to main), there is no merge target,
+    // so there are no conflicts to report.
+    let base_content = match git_service::read_file(base, "main", file_path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(Vec::new()),
+    };
 
     // piggyback the cache refresh: now that we have fresh main, update the overlay's
     // cached original_content and re-flag divergence so the activity view stays honest

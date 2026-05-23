@@ -10,4 +10,11 @@ pub struct TaskRes {
     pub name: String,
     pub branch_name: String,
     pub task_type: TaskType,
+    #[serde(default)]
+    pub archived: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct SetArchivedReq {
+    pub archived: bool,
 }
