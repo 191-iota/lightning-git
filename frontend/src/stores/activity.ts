@@ -5,7 +5,7 @@ import { useAuthStore } from "@/stores/auth";
 
 // Project-scoped activity WS. Persists across in-app navigation so
 // ProjectView <-> OverlayView dont tear it down on every view change.
-// No handshake timeout — that races with the actual connection and produces
+// No handshake timeout , that races with the actual connection and produces
 // the "closed before established" abort cycle. A slow handshake just stays in
 // "connecting" until it either opens or the backend drops it.
 export const useActivityStore = defineStore("activity", () => {
@@ -15,7 +15,7 @@ export const useActivityStore = defineStore("activity", () => {
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let currentProjectId: string | null = null;
-  // bumped on every fresh `open()` so a stale onclose from a prior socket
+  // bumped on every fresh open() call so a stale onclose from a prior socket
   // cant schedule a reconnect that races the new one.
   let generation = 0;
 
