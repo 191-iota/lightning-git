@@ -17,10 +17,23 @@ export function activate(context: vscode.ExtensionContext): void {
   const config = vscode.workspace.getConfiguration("lightningGit");
   const apiUrl = config.get<string>("apiUrl", "http://localhost:8080");
   const wsUrl = config.get<string>("wsUrl", "ws://localhost:8080");
-  const debounceMs = config.get<number>("debounceMs", 1_000);
+  const debounceMs = config.get<number>("debounceMs", 250);
 
   authManager = new AuthManager(context, apiUrl);
   client = new LightningGitClient(apiUrl, wsUrl, authManager);
+
+  // Notbremse status bar item. Lives at the extension level (not inside
+  // OverlaySession) because the spec requires it to be visible at all times,
+  // independently of whether a session is currently active.
+  const notbremseStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1000);
+  notbremseStatusItem.text = "$(zap) Notbremse";
+  notbremseStatusItem.tooltip =
+    "Reset your live overlay back to the committed branch state. Use if you typed credentials by accident.";
+  notbremseStatusItem.command = "lightning-git.notbremse";
+  notbremseStatusItem.color = new vscode.ThemeColor("statusBarItem.warningForeground");
+  notbremseStatusItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
+  notbremseStatusItem.show();
+  context.subscriptions.push(notbremseStatusItem);
 
   const contentProvider = new (class implements vscode.TextDocumentContentProvider {
     private content = "";
@@ -264,6 +277,42 @@ export function activate(context: vscode.ExtensionContext): void {
     void vscode.window.showInformationMessage("Lightning Git session stopped.");
   });
 
+  const notbremseCommand = vscode.commands.registerCommand("lightning-git.notbremse", async () => {
+    const projectId = context.workspaceState.get<string>(WORKSPACE_PROJECT_KEY);
+    if (!projectId) {
+      void vscode.window.showInformationMessage(
+        "Nothing to reset. No Lightning Git session is or has been active here.",
+      );
+      return;
+    }
+    if (!(await authManager.isLoggedIn())) {
+      void vscode.window.showWarningMessage("You are not logged in.");
+      return;
+    }
+
+    const confirmation = await vscode.window.showWarningMessage(
+      "Reset your live overlay to the committed branch state?",
+      {
+        modal: true,
+        detail:
+          "Your in-flight edits in this project are reverted on the server back to the latest committed state of your branch. Teammates' live views are updated immediately. Edits already broadcast cannot be recalled. Edits still sitting in your local editor are not touched, undo them yourself if needed.",
+      },
+      "Reset now",
+    );
+    if (confirmation !== "Reset now") return;
+
+    try {
+      const reset = await client.wipeMyOverlay(projectId);
+      void vscode.window.showInformationMessage(
+        reset > 0
+          ? `Notbremse triggered. Reset ${reset} file overlay${reset === 1 ? "" : "s"} on the server.`
+          : "Notbremse triggered. Nothing was on the server to reset.",
+      );
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Notbremse failed: ${getErrorMessage(error)}`);
+    }
+  });
+
   const viewChangeCommand = vscode.commands.registerCommand("lightning-git.viewChange", async () => {
     if (!overlaySession) {
       void vscode.window.showWarningMessage("No active session.");
@@ -307,6 +356,7 @@ export function activate(context: vscode.ExtensionContext): void {
     startSessionCommand,
     stopSessionCommand,
     viewChangeCommand,
+    notbremseCommand,
   );
 }
 

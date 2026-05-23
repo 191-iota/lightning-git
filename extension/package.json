@@ -48,6 +48,10 @@
       {
         "command": "lightning-git.peekConflicts",
         "title": "Lightning Git: Peek Merge Conflicts"
+      },
+      {
+        "command": "lightning-git.notbremse",
+        "title": "Lightning Git: Notbremse (Wipe Live Session)"
       }
     ],
     "configuration": {
@@ -62,6 +66,11 @@
           "type": "string",
           "default": "ws://localhost:8080",
           "description": "WebSocket server URL"
+        },
+        "lightningGit.debounceMs": {
+          "type": "number",
+          "default": 250,
+          "description": "Delay before broadcasting local edits to teammates. Lower values feel more live; higher values give a wider window to clear accidentally typed credentials with the Notbremse before sync."
         }
       }
     }

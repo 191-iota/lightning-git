@@ -25,6 +25,20 @@ export interface MergeConflict {
   hunks: ConflictHunk[];
 }
 
+export interface Comment {
+  id: string;
+  user_id: string;
+  line: number;
+  text: string;
+  created_at: number;
+}
+
+export interface ProjectMember {
+  id: string;
+  display_name: string;
+  role: "admin" | "member";
+}
+
 export class LightningGitClient {
   private readonly http: AxiosInstance;
 
@@ -116,6 +130,17 @@ export class LightningGitClient {
     return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
   }
 
+  /// Members of the given project, used by OverlaySession to render comment
+  /// authors by name instead of UUID prefix.
+  async listProjectMembers(projectId: string): Promise<ProjectMember[]> {
+    try {
+      const response = await this.http.get<ProjectMember[]>(`/api/projects/${projectId}/members`);
+      return response.data;
+    } catch {
+      return [];
+    }
+  }
+
   async getMergeConflicts(projectId: string, userId: string, fileName: string): Promise<MergeConflict[]> {
     try {
       const encodedFile = fileName.split("/").map(encodeURIComponent).join("/");
@@ -126,5 +151,22 @@ export class LightningGitClient {
     } catch {
       return [];
     }
+  }
+
+  async listComments(projectId: string, fileName: string): Promise<Comment[]> {
+    try {
+      const encodedFile = fileName.split("/").map(encodeURIComponent).join("/");
+      const response = await this.http.get(`/api/comments/${projectId}/${encodedFile}`);
+      return response.data as Comment[];
+    } catch {
+      return [];
+    }
+  }
+
+  // Notbremse. Resets the caller's overlay state on the server back to the
+  // committed branch state. Returns the number of file overlays affected.
+  async wipeMyOverlay(projectId: string): Promise<number> {
+    const response = await this.http.delete<{ reset: number }>(`/api/overlay/me/${projectId}`);
+    return response.data?.reset ?? 0;
   }
 }
