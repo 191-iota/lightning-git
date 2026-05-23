@@ -247,7 +247,7 @@ pub async fn list_org_members(
     Ok(out)
 }
 
-/// Lists projects belonging to an org. If `is_owner`, returns every project;
+/// Lists projects belonging to an org. If "is_owner", returns every project;
 /// otherwise only those the requesting user is a project_member of (matching
 /// the "org members see only their own projects" rule).
 pub async fn list_org_projects(

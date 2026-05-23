@@ -119,7 +119,7 @@ impl AppState {
         entry.activity_tx.clone()
     }
 
-    // Refreshes the cached `original_content` for a file's overlay using a freshly
+    // Refreshes the cached "original_content" for a file's overlay using a freshly
     // read base (typically read by the merge service, which already fetches). Lets
     // the cache stay in sync with main without spending an extra git call.
     pub fn refresh_overlay_base(&self, project_id: &Uuid, file_name: &str, new_base: String) {
