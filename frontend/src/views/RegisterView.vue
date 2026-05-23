@@ -2,18 +2,19 @@
 import { ref } from "vue";
 import { useRouter, RouterLink } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { useToastStore } from "@/stores/toast";
+import NavBar from "@/components/NavBar.vue";
 
 const email = ref("");
 const username = ref("");
 const password = ref("");
-const error = ref<string | null>(null);
 const submitting = ref(false);
 
 const authStore = useAuthStore();
+const toast = useToastStore();
 const router = useRouter();
 
 async function onSubmit() {
-  error.value = null;
   submitting.value = true;
   try {
     await authStore.register({
@@ -21,9 +22,10 @@ async function onSubmit() {
       username: username.value,
       password: password.value,
     });
+    toast.success("Account created. Please sign in.");
     await router.push({ name: "login" });
   } catch {
-    error.value = "Registration failed";
+    toast.error("Registration failed. The email or username may already be taken.");
   } finally {
     submitting.value = false;
   }
@@ -31,63 +33,71 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-zinc-950 text-zinc-100 px-4">
-    <form
-      class="w-full max-w-sm bg-zinc-900 rounded-lg p-6 space-y-4 border border-zinc-800"
-      @submit.prevent="onSubmit"
-    >
-      <h1 class="text-xl font-semibold">Create account</h1>
+  <div class="min-h-screen flex flex-col bg-lg-bg text-lg-text">
+    <NavBar brand-to="/pricing">
+      <RouterLink to="/pricing" class="lg-link">Pricing</RouterLink>
+      <RouterLink to="/login" class="lg-link">Log in</RouterLink>
+    </NavBar>
 
-      <label class="block">
-        <span class="text-sm text-zinc-400">Email</span>
-        <input
-          v-model="email"
-          type="email"
-          required
-          autocomplete="email"
-          class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 focus:outline-none focus:border-zinc-500"
-        />
-      </label>
-
-      <label class="block">
-        <span class="text-sm text-zinc-400">Username</span>
-        <input
-          v-model="username"
-          type="text"
-          required
-          minlength="3"
-          maxlength="32"
-          autocomplete="username"
-          class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 focus:outline-none focus:border-zinc-500"
-        />
-      </label>
-
-      <label class="block">
-        <span class="text-sm text-zinc-400">Password</span>
-        <input
-          v-model="password"
-          type="password"
-          required
-          minlength="8"
-          autocomplete="new-password"
-          class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 focus:outline-none focus:border-zinc-500"
-        />
-      </label>
-
-      <p v-if="error" class="text-sm text-red-400">{{ error }}</p>
-
-      <button
-        type="submit"
-        :disabled="submitting"
-        class="w-full bg-zinc-100 text-zinc-900 rounded py-2 font-medium disabled:opacity-50"
+    <main class="flex-1 flex items-center justify-center px-4 py-16">
+      <form
+        class="w-full max-w-md lg-card p-8 space-y-5"
+        @submit.prevent="onSubmit"
       >
-        {{ submitting ? "Creating..." : "Create account" }}
-      </button>
+        <h1 class="text-2xl font-semibold">Create account</h1>
 
-      <p class="text-sm text-zinc-500">
-        Already have an account?
-        <RouterLink to="/login" class="text-zinc-300 underline">Sign in</RouterLink>
-      </p>
-    </form>
+        <label class="block">
+          <span class="text-xs uppercase tracking-wider text-lg-text-sec font-medium">Email</span>
+          <input
+            v-model="email"
+            type="email"
+            required
+            autocomplete="email"
+            class="lg-input mt-1.5"
+            placeholder="you@example.com"
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs uppercase tracking-wider text-lg-text-sec font-medium">Username</span>
+          <input
+            v-model="username"
+            type="text"
+            required
+            minlength="3"
+            maxlength="32"
+            autocomplete="username"
+            class="lg-input mt-1.5"
+            placeholder="octocat"
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs uppercase tracking-wider text-lg-text-sec font-medium">Password</span>
+          <input
+            v-model="password"
+            type="password"
+            required
+            minlength="8"
+            autocomplete="new-password"
+            class="lg-input mt-1.5"
+            placeholder="At least 8 characters"
+          />
+        </label>
+
+        <button
+          type="submit"
+          :disabled="submitting"
+          class="lg-btn-primary w-full disabled:opacity-50"
+        >
+          {{ submitting ? "Creating..." : "Create account" }}
+        </button>
+
+        <p class="text-sm text-lg-text-sec text-center">
+          Already have an account?
+          <RouterLink to="/login" class="text-lg-accent-bright hover:text-lg-accent-hover transition-colors">Sign in</RouterLink>
+        </p>
+      </form>
+    </main>
   </div>
 </template>
