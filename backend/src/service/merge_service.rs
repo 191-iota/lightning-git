@@ -215,7 +215,7 @@ pub fn compute_conflicts(all_hunks: Vec<Hunk>) -> Vec<Conflict> {
 
 /// Produces a comparable fingerprint of what a hunk actually changes.
 /// Two hunks that delete/insert the exact same lines relative to base
-/// will have the same signature — meaning they're not a real conflict.
+/// will have the same signature, meaning they're not a real conflict.
 fn hunk_signature(hunk: &Hunk) -> (usize, usize, &[String]) {
     (hunk.base_start, hunk.base_end, &hunk.content)
 }

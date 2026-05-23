@@ -79,3 +79,11 @@ pub struct AddProjectMemberReq {
 pub struct CreateProjectRes {
     pub proj_id: Uuid,
 }
+
+/// Response from "/api/projects/{id}/tree". Separates files already
+/// committed at "origin/{branch}" from files only present as live overlays.
+#[derive(Serialize, ToSchema)]
+pub struct ProjectTreeRes {
+    pub committed: Vec<String>,
+    pub drafts: Vec<String>,
+}

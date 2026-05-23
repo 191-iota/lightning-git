@@ -99,7 +99,7 @@ pub struct ActiveEdit {
     pub edited_sections: (u32, u32),
 }
 
-/// Returns a guard to the overlay stored for `file_name`.
+/// Returns a guard to the overlay stored for "file_name".
 /// The guard lives as long as the caller holds it, so no cloning occurs.
 pub fn extract_overlay<'a>(
     proj_state: &'a ProjectLiveState,

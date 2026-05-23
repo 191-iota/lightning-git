@@ -13,7 +13,7 @@ use crate::error::custom_errors::GitError;
 use crate::error::custom_errors::LGitIoError;
 
 // throttle so multiple reads within the same window dont each pay the
-// network cost of `git fetch` on the same repo. session start used to fire
+// network cost of "git fetch" on the same repo. session start used to fire
 // ~N+2 fetches per click; with the throttle those collapse to one.
 const FETCH_TTL: Duration = Duration::from_secs(30);
 static LAST_FETCH: Lazy<DashMap<PathBuf, Instant>> = Lazy::new(DashMap::new);
@@ -25,7 +25,7 @@ pub async fn fetch(path: &Path) -> Result<(), LGitIoError> {
     Ok(())
 }
 
-/// Like `fetch`, but skips when the last successful fetch is within FETCH_TTL.
+/// Like "fetch", but skips when the last successful fetch is within FETCH_TTL.
 /// Use this from request-driven code paths so a burst of reads doesnt thrash.
 pub async fn maybe_fetch(path: &Path) -> Result<(), LGitIoError> {
     if let Some(t) = LAST_FETCH.get(path) {
