@@ -128,6 +128,63 @@ impl AppState {
         overlay.original_content = new_base;
     }
 
+    // Notbremse: reset the user's in-flight overlay on every file back to the
+    // committed branch state (the original_content cached when the overlay was
+    // opened, which came from git show origin/{branch}:{path}). The user
+    // remains in the session; their typing in flight is gone. We broadcast the
+    // reset content on each per-file channel so teammates' views update, then
+    // refresh the project-wide activity feed so the edited region drops to
+    // zero in the active-editors panel.
+    pub fn reset_user_overlays(&self, project_id: &Uuid, user_id: &Uuid) -> usize {
+        let Some(proj) = self.repo_states.get(project_id) else {
+            return 0;
+        };
+        let mut reset_count = 0usize;
+        for overlay in proj.overlays.iter() {
+            let base = overlay.original_content.clone();
+            let tx = overlay.tx.clone();
+            let mut touched = false;
+            if let Some(mut uo) = overlay.user_contents.get_mut(user_id) {
+                uo.content = base.clone();
+                uo.edited_sections = (0, 0);
+                uo.updated_at = Instant::now();
+                touched = true;
+            }
+            if touched {
+                reset_count += 1;
+                let _ = tx.send(OverlayChangeReq {
+                    user_id: *user_id,
+                    content: base,
+                    line_section: (0, 0),
+                });
+            }
+        }
+        let activity_tx = proj.activity_tx.clone();
+        // release the read guard before we recompute the activity snapshot so
+        // compute_activity can re-acquire the per-shard locks without contention
+        drop(proj);
+        let _ = activity_tx.send(self.compute_activity(project_id));
+        reset_count
+    }
+
+    /// File paths held in any user's overlay for this project on the given branch.
+    /// Used by the tree endpoint to surface drafts that are not yet committed.
+    pub fn overlay_files_for_branch(&self, project_id: &Uuid, branch: &str) -> Vec<String> {
+        let Some(proj) = self.repo_states.get(project_id) else { return Vec::new(); };
+        let mut out: Vec<String> = Vec::new();
+        for entry in proj.overlays.iter() {
+            let on_branch = entry
+                .value()
+                .user_contents
+                .iter()
+                .any(|u| u.value().branch == branch);
+            if on_branch {
+                out.push(entry.key().clone());
+            }
+        }
+        out
+    }
+
     pub fn compute_activity(&self, project_id: &Uuid) -> Vec<ActiveEdit> {
         let mut edits = Vec::new();
         let Some(proj) = self.repo_states.get(project_id) else {
