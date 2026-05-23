@@ -12,16 +12,6 @@ export interface OverlayUserView {
   updated_at_nanos: number;
 }
 
-export interface OverlayViewMsg {
-  content: string;
-  original_content: string;
-  all_user_contents: OverlayUserView[];
-}
-
-export type OverlayWsMsg =
-  | { kind: "change"; payload: OverlayChangeMsg }
-  | { kind: "view"; payload: OverlayViewMsg };
-
 export interface OverlayWsOpts {
   projectId: string;
   userId: string;
@@ -29,7 +19,7 @@ export interface OverlayWsOpts {
   token: string;
 }
 
-type MessageHandler = (msg: OverlayWsMsg) => void;
+type MessageHandler = (msg: OverlayChangeMsg) => void;
 
 export class OverlayWebSocket {
   private socket: WebSocket | null = null;
@@ -38,7 +28,7 @@ export class OverlayWebSocket {
   private readonly opts: OverlayWsOpts;
   // dispose() runs before the socket fires its async onclose, so without this
   // flag the onclose handler would schedule a reconnect on an instance that
-  // the caller has already thrown away — leaving an orphan socket alive.
+  // the caller has already thrown away , leaving an orphan socket alive.
   private disposed = false;
 
   constructor(opts: OverlayWsOpts) {
@@ -56,13 +46,8 @@ export class OverlayWebSocket {
 
     this.socket.onmessage = (event) => {
       try {
-        // backend sends serde external-tag form: { Change: ... } or { View: ... }
-        const obj = JSON.parse(event.data) as Record<string, unknown>;
-        if (obj.Change) {
-          for (const h of this.handlers) h({ kind: "change", payload: obj.Change as OverlayChangeMsg });
-        } else if (obj.View) {
-          for (const h of this.handlers) h({ kind: "view", payload: obj.View as OverlayViewMsg });
-        }
+        const change = JSON.parse(event.data) as OverlayChangeMsg;
+        for (const h of this.handlers) h(change);
       } catch {
         // ignore malformed
       }
