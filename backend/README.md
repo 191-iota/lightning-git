@@ -4,7 +4,7 @@ The Rust + Actix-Web backend for Lightning Git. Owns the cloned repositories on
 disk, the in-memory overlay state, the WebSocket realtime layer, and the merge
 conflict detection service.
 
-Requires `git` installed on the host.
+Requires "git" installed on the host.
 
 ## What is Lightning Git?
 
@@ -15,9 +15,9 @@ merges.
 
 The product spans three repos:
 
-- `hf-lightning-git-backend` (this one) — Rust + Actix-Web
-- `hf-lightning-git-frontend` — Vue 3 + TypeScript
-- `hf-lightning-git-vsc` — VSCode extension
+- "hf-lightning-git-backend" (this one) — Rust + Actix-Web
+- "hf-lightning-git-frontend" — Vue 3 + TypeScript
+- "hf-lightning-git-vsc" — VSCode extension
 
 ## Why?
 
@@ -41,13 +41,13 @@ remote branch.
 
 Tasks are auto-derived. The branch list of the remote repository is the source
 of truth. Tasks gain a Kanban column membership locally per browser, and an
-`archived` flag at the database level for tasks the user no longer cares
+"archived" flag at the database level for tasks the user no longer cares
 about. Nothing about the task model writes back to Git.
 
 ### Realtime overlay
 
 An **Overlay** is the in-memory state for one file in one project. It holds
-the committed base content plus a `UserOverlay` per connected editor with
+the committed base content plus a "UserOverlay" per connected editor with
 their live content and edited range. Edits arrive over a per-file WebSocket,
 get broadcast to every other subscriber, and live only in RAM. A restart
 wipes them on purpose.
@@ -64,7 +64,7 @@ unsent, but the dwell time is bounded by RAM.
 
 The cloned repository is read-only. The backend never runs a write-side Git
 command. Everything dynamic lives in RAM or in Supabase metadata, the actual
-Git repository on disk stays exactly as it would after a vanilla `git clone`.
+Git repository on disk stays exactly as it would after a vanilla "git clone".
 
 ---
 
@@ -83,14 +83,14 @@ Git repository on disk stays exactly as it would after a vanilla `git clone`.
 
 - **REST API** — projects, organisations, tasks, members, comments,
   configuration.
-- **WebSocket gateway** — `/api/projects/{id}/activity/ws` for project-wide
-  activity, `/api/overlay/ws/{proj}/{user}/{file}` per file.
-- **Realtime overlay** — `DashMap`-backed state plus `tokio::sync::broadcast`
+- **WebSocket gateway** — "/api/projects/{id}/activity/ws" for project-wide
+  activity, "/api/overlay/ws/{proj}/{user}/{file}" per file.
+- **Realtime overlay** — "DashMap"-backed state plus "tokio::sync::broadcast"
   channels per file.
 - **Auth filter** — Supabase JWT validation against the JWKS endpoint with an
   in-process cache shared across requests.
-- **Git service** — thin async subprocess wrapper around `git clone`, `fetch`,
-  `show`, `ls-tree`, `branch -r`. Read-only by construction.
+- **Git service** — thin async subprocess wrapper around "git clone", "fetch",
+  "show", "ls-tree", "branch -r". Read-only by construction.
 
 ### Data layer
 
@@ -105,9 +105,9 @@ The full DDL is in [src/supabase/table_creation.sql](src/supabase/table_creation
 
 An overlay is an in-memory editing session for a single file. Created lazily
 the first time a user opens that file. Each overlay stores the base content
-read from `origin/{branch}:{path}`, plus a `UserOverlay` per connected
+read from "origin/{branch}:{path}", plus a "UserOverlay" per connected
 developer with their content, current cursor section, and branch. Edits are
-broadcast through a shared `tokio::broadcast` channel; the sending user is
+broadcast through a shared "tokio::broadcast" channel; the sending user is
 filtered out so they don't see their own keystrokes echoed back.
 
 ### Overlay structure
@@ -118,17 +118,17 @@ filtered out so they don't see their own keystrokes echoed back.
 
 ![Overlay creation](assets/overlay-creation.png)
 
-1. Client calls `PUT /api/overlay/{proj}/{user}/{file}?branch={b}`.
+1. Client calls "PUT /api/overlay/{proj}/{user}/{file}?branch={b}".
 2. Permission check resolves project membership via the JWT.
-3. Git service reads `origin/{branch}:{file}` from the cloned repo.
-4. `AppState::get_or_create_overlay` seeds or refreshes the `UserOverlay`.
+3. Git service reads "origin/{branch}:{file}" from the cloned repo.
+4. "AppState::get_or_create_overlay" seeds or refreshes the "UserOverlay".
 5. A fresh activity snapshot is broadcast on the project-wide channel.
 
 ### Live edit flow
 
 ![WebSocket sequence](assets/overlay-websocket-sequence.png)
 
-The per-file WebSocket carries `OverlayChangeReq` messages in both directions.
+The per-file WebSocket carries "OverlayChangeReq" messages in both directions.
 Server-side handles the inbound message by updating the user's content and
 re-broadcasting it on the same channel; every other subscribed editor receives
 the message with self-filter applied. Two parallel tasks per session: outbound
@@ -138,18 +138,18 @@ broadcast forwarder, inbound message consumer.
 
 ## Merge conflict detection
 
-The conflict service compares branch contents against `origin/main`, decomposes
+The conflict service compares branch contents against "origin/main", decomposes
 each diff into hunks, then groups hunks whose base line ranges overlap.
 
 Flow per file:
 
-1. Read `origin/main:{file}` as the base.
+1. Read "origin/main:{file}" as the base.
 2. Collect live overlay content per active branch.
-3. For branches with no live overlay, read `origin/{branch}:{file}` from Git.
-4. `compute_combined_diff(base, branches)` yields one `Hunk` per contiguous
+3. For branches with no live overlay, read "origin/{branch}:{file}" from Git.
+4. "compute_combined_diff(base, branches)" yields one "Hunk" per contiguous
    change region per branch.
-5. `compute_conflicts(hunks)` groups transitively overlapping hunks into
-   `Conflict` clusters.
+5. "compute_conflicts(hunks)" groups transitively overlapping hunks into
+   "Conflict" clusters.
 
 Detection runs pre-commit and pre-merge. The frontend renders conflict markers
 in the OverlayView, the VSCode extension paints a gutter decoration on the
@@ -161,13 +161,13 @@ matching line.
 
 Role-based, two-tier.
 
-- **Organisation**: `owner` can manage members and projects, `member` can see
+- **Organisation**: "owner" can manage members and projects, "member" can see
   what they belong to.
-- **Project**: `admin` can manage settings and members, `member` can edit live
+- **Project**: "admin" can manage settings and members, "member" can edit live
   and comment.
 
 Org owners get implicit admin on every project in their org. The
-`require_*_permission!` macros wrap every authenticated endpoint and check
+"require_*_permission!" macros wrap every authenticated endpoint and check
 membership before any side effect.
 
 ![Permission flow](assets/granting-permission.png)
@@ -176,15 +176,15 @@ membership before any side effect.
 
 ## Testing
 
-Tests live under `src/test/` in three tiers. Run them with `cargo test`.
+Tests live under "src/test/" in three tiers. Run them with "cargo test".
 
-- **Tier 1** (`tier_1/`) — pure logic. Diff decomposition, conflict grouping.
+- **Tier 1** ("tier_1/") — pure logic. Diff decomposition, conflict grouping.
   No IO, microseconds.
-- **Tier 2** (`tier_2/`) — `AppState` transitions with real `DashMap` and
+- **Tier 2** ("tier_2/") — "AppState" transitions with real "DashMap" and
   dummy external clients. Reconnect semantics, multi-user isolation,
   Notbremse reset, broadcast channel sharing.
-- **Tier 3** (`tier_3/`) — git subprocess against a real `git` binary, using
-  `tempfile` to create disposable bare + working clones.
+- **Tier 3** ("tier_3/") — git subprocess against a real "git" binary, using
+  "tempfile" to create disposable bare + working clones.
 
 Current suite: 54 tests, all green. The test concept document is at
 [src/test/README.md](src/test/README.md).
