@@ -11,6 +11,9 @@ use uuid::Uuid;
 use self::model::app_state::AppState;
 use self::model::overlay::ProjectLiveState;
 use self::routes::global_routes;
+use crate::handler::comment_handler::__path_create_comment;
+use crate::handler::comment_handler::__path_delete_comment;
+use crate::handler::comment_handler::__path_list_comments;
 use crate::handler::config_handler::__path_health_check;
 use crate::handler::merge_handler::__path_get_merge_conflicts;
 use crate::handler::org_handler::__path_add_org_member;
@@ -24,10 +27,13 @@ use crate::handler::org_handler::__path_remove_org_member;
 use crate::handler::org_handler::__path_update_org;
 use crate::handler::overlay_handler::__path_create_active_overlay;
 use crate::handler::overlay_handler::__path_get_overlay;
+use crate::handler::overlay_handler::__path_wipe_my_overlay;
 use crate::handler::overlay_ws::__path_ws_overlay_stream;
 use crate::handler::overlay_ws::__path_ws_project_activity;
+use crate::handler::project_handler::__path_add_project_member;
 use crate::handler::project_handler::__path_create_project;
 use crate::handler::project_handler::__path_delete_project;
+use crate::handler::project_handler::__path_remove_project_member;
 use crate::handler::project_handler::__path_get_project;
 use crate::handler::project_handler::__path_get_project_file;
 use crate::handler::project_handler::__path_get_project_activity;
@@ -37,6 +43,7 @@ use crate::handler::project_handler::__path_list_project_tree;
 use crate::handler::project_handler::__path_update_project;
 use crate::handler::task_handler::__path_get_project_tasks;
 use crate::handler::task_handler::__path_get_task;
+use crate::handler::task_handler::__path_set_task_archived;
 use crate::handler::user_handler::__path_get_user_id_by_username;
 use crate::handler::user_handler::__path_login;
 use crate::handler::user_handler::__path_refresh_token;
@@ -50,14 +57,19 @@ use crate::model::org::OrgRes;
 use crate::model::org::OrgRole;
 use crate::model::org::UpdateOrgReq;
 use crate::model::overlay::ActiveEdit;
+use crate::model::overlay::Comment;
 use crate::model::overlay::Conflict;
+use crate::model::overlay::CreateCommentReq;
 use crate::model::overlay::OverlayViewRes;
+use crate::model::project::AddProjectMemberReq;
 use crate::model::project::CreateProjectReq;
 use crate::model::project::CreateProjectRes;
 use crate::model::project::ProjectMemberRes;
 use crate::model::project::ProjectRes;
 use crate::model::project::ProjectRole;
+use crate::model::project::ProjectTreeRes;
 use crate::model::project::UpdateProjectReq;
+use crate::model::task::SetArchivedReq;
 use crate::model::task::TaskRes;
 use crate::model::user::LoginPayload;
 use crate::model::user::RefreshReq;
@@ -86,6 +98,9 @@ mod config;
 mod macros;
 mod repository;
 mod service;
+
+#[cfg(test)]
+mod test;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -118,16 +133,20 @@ async fn main() -> std::io::Result<()> {
             get_project,
             get_task,
             get_project_tasks,
+            set_task_archived,
             get_project_file,
             list_project_tree,
             list_project_branches,
             get_project_activity,
             get_project_members,
+            add_project_member,
+            remove_project_member,
             register,
             login,
             refresh_token,
             get_overlay,
             create_active_overlay,
+            wipe_my_overlay,
             get_merge_conflicts,
             ws_overlay_stream,
             ws_project_activity,
@@ -141,10 +160,14 @@ async fn main() -> std::io::Result<()> {
             add_org_member,
             remove_org_member,
             list_org_projects,
+            list_comments,
+            create_comment,
+            delete_comment,
         ),
         components(
             schemas(
                 TaskRes,
+                SetArchivedReq,
                 TaskType,
                 CreateProjectReq,
                 ProjectRes,
@@ -155,7 +178,9 @@ async fn main() -> std::io::Result<()> {
                 OverlayViewRes,
                 UpdateProjectReq,
                 ProjectMemberRes,
+                AddProjectMemberReq,
                 ProjectRole,
+                ProjectTreeRes,
                 Conflict,
                 ActiveEdit,
                 UserSearchEntryRes,
@@ -168,6 +193,8 @@ async fn main() -> std::io::Result<()> {
                 OrgMemberRes,
                 OrgRole,
                 AddOrgMemberReq,
+                Comment,
+                CreateCommentReq,
             ),
         ),
         modifiers(&UuidSchema),
@@ -181,6 +208,7 @@ async fn main() -> std::io::Result<()> {
             (name = "merge", description = "Merge endpoints"),
             (name = "config", description = "Config endpoints"),
             (name = "org", description = "Organization endpoints"),
+            (name = "comment", description = "Comment endpoints"),
         )
     )]
     struct ApiDoc;
@@ -196,7 +224,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(
                 Cors::default()
                     .allowed_origin("http://localhost:5173")
-                    .allowed_methods(vec!["GET", "POST", "PUT", "DELETE"])
+                    .allowed_methods(vec!["GET", "POST", "PUT", "PATCH", "DELETE"])
                     .allowed_headers(vec!["Content-Type", "Authorization"])
                     .max_age(3600),
             )

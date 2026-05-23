@@ -68,3 +68,43 @@ pub async fn find_by_proj(client: &SupabaseClient, id: String) -> Result<Vec<Val
 
     Ok(handled_result)
 }
+
+pub async fn set_archived(
+    db: &SupabaseClient,
+    task_id: &Uuid,
+    archived: bool,
+) -> Result<(), RepoError> {
+    db.update("task", task_id.to_string().as_str(), json!({ "archived": archived }))
+        .await
+        .map_err(|e| {
+            error!("Failed updating task archived flag: {e}");
+            RepoError::UpdateError(String::from("Failed updating task archived flag"))
+        })?;
+    Ok(())
+}
+
+/// Resolve which project a task belongs to. Used to scope permission checks
+/// when the caller only has the task id (e.g. the archive endpoint).
+pub async fn project_id_of_task(
+    db: &SupabaseClient,
+    task_id: &Uuid,
+) -> Result<Option<Uuid>, RepoError> {
+    let rows = db
+        .select("task")
+        .eq("id", task_id.to_string().as_str())
+        .columns(vec!["project_id"])
+        .execute()
+        .await
+        .map_err(|e| {
+            error!("Failed locating task project: {e}");
+            RepoError::ExtractionError(String::from("Failed locating task project"))
+        })?;
+
+    let Some(row) = rows.first() else {
+        return Ok(None);
+    };
+    let Some(pid) = row.get("project_id").and_then(|v| v.as_str()) else {
+        return Ok(None);
+    };
+    Ok(Uuid::parse_str(pid).ok())
+}
