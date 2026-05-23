@@ -2,23 +2,25 @@
 import { ref } from "vue";
 import { useRouter, RouterLink } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { useToastStore } from "@/stores/toast";
+import NavBar from "@/components/NavBar.vue";
 
 const email = ref("");
 const password = ref("");
-const error = ref<string | null>(null);
 const submitting = ref(false);
 
 const authStore = useAuthStore();
+const toast = useToastStore();
 const router = useRouter();
 
 async function onSubmit() {
-  error.value = null;
   submitting.value = true;
   try {
     await authStore.login({ email: email.value, password: password.value });
+    toast.success("Welcome back");
     await router.push({ name: "dashboard" });
   } catch {
-    error.value = "Login failed";
+    toast.error("Login failed. Check your email and password.");
   } finally {
     submitting.value = false;
   }
@@ -26,49 +28,56 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-zinc-950 text-zinc-100 px-4">
-    <form
-      class="w-full max-w-sm bg-zinc-900 rounded-lg p-6 space-y-4 border border-zinc-800"
-      @submit.prevent="onSubmit"
-    >
-      <h1 class="text-xl font-semibold">Sign in</h1>
+  <div class="min-h-screen flex flex-col bg-lg-bg text-lg-text">
+    <NavBar brand-to="/pricing">
+      <RouterLink to="/pricing" class="lg-link">Pricing</RouterLink>
+      <RouterLink to="/register" class="lg-link">Sign up</RouterLink>
+    </NavBar>
 
-      <label class="block">
-        <span class="text-sm text-zinc-400">Email</span>
-        <input
-          v-model="email"
-          type="email"
-          required
-          autocomplete="email"
-          class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 focus:outline-none focus:border-zinc-500"
-        />
-      </label>
-
-      <label class="block">
-        <span class="text-sm text-zinc-400">Password</span>
-        <input
-          v-model="password"
-          type="password"
-          required
-          autocomplete="current-password"
-          class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 focus:outline-none focus:border-zinc-500"
-        />
-      </label>
-
-      <p v-if="error" class="text-sm text-red-400">{{ error }}</p>
-
-      <button
-        type="submit"
-        :disabled="submitting"
-        class="w-full bg-zinc-100 text-zinc-900 rounded py-2 font-medium disabled:opacity-50"
+    <main class="flex-1 flex items-center justify-center px-4 py-16">
+      <form
+        class="w-full max-w-md lg-card p-8 space-y-5"
+        @submit.prevent="onSubmit"
       >
-        {{ submitting ? "Signing in..." : "Sign in" }}
-      </button>
+        <h1 class="text-2xl font-semibold">Sign in</h1>
 
-      <p class="text-sm text-zinc-500">
-        No account?
-        <RouterLink to="/register" class="text-zinc-300 underline">Register</RouterLink>
-      </p>
-    </form>
+        <label class="block">
+          <span class="text-xs uppercase tracking-wider text-lg-text-sec font-medium">Email</span>
+          <input
+            v-model="email"
+            type="email"
+            required
+            autocomplete="email"
+            class="lg-input mt-1.5"
+            placeholder="you@example.com"
+          />
+        </label>
+
+        <label class="block">
+          <span class="text-xs uppercase tracking-wider text-lg-text-sec font-medium">Password</span>
+          <input
+            v-model="password"
+            type="password"
+            required
+            autocomplete="current-password"
+            class="lg-input mt-1.5"
+            placeholder="••••••••"
+          />
+        </label>
+
+        <button
+          type="submit"
+          :disabled="submitting"
+          class="lg-btn-primary w-full disabled:opacity-50"
+        >
+          {{ submitting ? "Signing in..." : "Sign in" }}
+        </button>
+
+        <p class="text-sm text-lg-text-sec text-center">
+          No account?
+          <RouterLink to="/register" class="text-lg-accent-bright hover:text-lg-accent-hover transition-colors">Create one</RouterLink>
+        </p>
+      </form>
+    </main>
   </div>
 </template>
