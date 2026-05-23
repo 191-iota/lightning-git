@@ -24,6 +24,7 @@ use crate::handler::org_handler::__path_list_my_orgs;
 use crate::handler::org_handler::__path_list_org_members;
 use crate::handler::org_handler::__path_list_org_projects;
 use crate::handler::org_handler::__path_remove_org_member;
+use crate::handler::org_handler::__path_transfer_org_ownership;
 use crate::handler::org_handler::__path_update_org;
 use crate::handler::overlay_handler::__path_create_active_overlay;
 use crate::handler::overlay_handler::__path_get_overlay;
@@ -55,6 +56,7 @@ use crate::model::org::MyOrgRes;
 use crate::model::org::OrgMemberRes;
 use crate::model::org::OrgRes;
 use crate::model::org::OrgRole;
+use crate::model::org::TransferOrgOwnershipReq;
 use crate::model::org::UpdateOrgReq;
 use crate::model::overlay::ActiveEdit;
 use crate::model::overlay::Comment;
@@ -159,6 +161,7 @@ async fn main() -> std::io::Result<()> {
             list_org_members,
             add_org_member,
             remove_org_member,
+            transfer_org_ownership,
             list_org_projects,
             list_comments,
             create_comment,
@@ -193,6 +196,7 @@ async fn main() -> std::io::Result<()> {
                 OrgMemberRes,
                 OrgRole,
                 AddOrgMemberReq,
+                TransferOrgOwnershipReq,
                 Comment,
                 CreateCommentReq,
             ),

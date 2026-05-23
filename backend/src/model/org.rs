@@ -81,3 +81,9 @@ pub struct OrgMemberRes {
     pub display_name: String,
     pub role: OrgRole,
 }
+
+#[derive(Deserialize, ToSchema)]
+pub struct TransferOrgOwnershipReq {
+    #[schema(value_type = String)]
+    pub new_owner_id: Uuid,
+}
