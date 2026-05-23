@@ -8,6 +8,7 @@ use crate::model::project::AddProjectMemberReq;
 use crate::model::project::CreateProjectReq;
 use crate::model::project::CreateProjectRes;
 use crate::model::project::ProjectRole;
+use crate::model::project::ProjectTreeRes;
 use crate::model::project::UpdateProjectReq;
 use crate::model::user::MiddlewareData;
 use crate::repository::project_repository;
@@ -392,7 +393,8 @@ pub async fn list_project_branches(
     }
 }
 
-/// All tracked file paths on the given branch, used to render the OverlayView tree.
+/// File listing for the OverlayView tree: committed files at origin/{branch}
+/// plus live-overlay drafts that haven't been committed yet.
 #[utoipa::path(
     get,
     path = "/api/projects/{id}/tree",
@@ -417,13 +419,27 @@ pub async fn list_project_tree(
     };
 
     let repo_path = state.repo_loc.join(proj_id.to_string());
-    match git_service::list_files(&repo_path, &branch).await {
-        Ok(files) => HttpResponse::Ok().json(files),
+    let mut committed = match git_service::list_files(&repo_path, &branch).await {
+        Ok(files) => files,
         Err(e) => {
-            error!("Failed listing files for {proj_id}@{branch}: {e}");
-            HttpResponse::BadRequest().body("Failed listing files")
+            // a branch may only exist as live drafts on a not-yet-pushed local
+            // branch; in that case ls-tree fails but we still want to return
+            // the drafts. log the underlying git error and fall through.
+            error!("list_files failed for {proj_id}@{branch}: {e}");
+            Vec::new()
         }
-    }
+    };
+    committed.sort();
+
+    let committed_set: std::collections::HashSet<&String> = committed.iter().collect();
+    let mut drafts: Vec<String> = state
+        .overlay_files_for_branch(&proj_id, &branch)
+        .into_iter()
+        .filter(|f| !committed_set.contains(f))
+        .collect();
+    drafts.sort();
+
+    HttpResponse::Ok().json(ProjectTreeRes { committed, drafts })
 }
 
 /// Read a single file's text content from a given branch, served as text/plain.
@@ -466,8 +482,13 @@ pub async fn get_project_file(
             .insert_header((CONTENT_TYPE, "text/plain; charset=utf-8"))
             .body(content),
         Err(e) => {
-            error!("Failed reading {file_path}@{branch} for proj {proj_id}: {e}");
-            HttpResponse::BadRequest().body("Failed reading file")
+            // file is a draft on this branch (no committed content yet).
+            // return empty body so the OverlayView can still attach its
+            // per-file WS and stream in live edits from teammates.
+            error!("read_file miss for {file_path}@{branch} in proj {proj_id}: {e}");
+            HttpResponse::Ok()
+                .insert_header((CONTENT_TYPE, "text/plain; charset=utf-8"))
+                .body("")
         }
     }
 }
