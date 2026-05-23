@@ -5,6 +5,7 @@ use crate::model::org::AddOrgMemberReq;
 use crate::model::org::CreateOrgReq;
 use crate::model::org::CreateOrgRes;
 use crate::model::org::OrgRole;
+use crate::model::org::TransferOrgOwnershipReq;
 use crate::model::org::UpdateOrgReq;
 use crate::model::user::MiddlewareData;
 use crate::repository::org_repository;
@@ -183,6 +184,12 @@ pub async fn add_org_member(
     if let Err(e) = req.validate() {
         return HttpResponse::BadRequest().json(e);
     }
+    // an org has exactly one owner. promotion happens through the transfer
+    // endpoint, not by adding a second owner row.
+    if matches!(req.role, OrgRole::Owner) {
+        return HttpResponse::BadRequest()
+            .body("An org can only have one owner; use the transfer endpoint to change it");
+    }
     let org_id = path.into_inner();
     require_org_owner!(&state, &org_id, &ext_data.user_id);
 
@@ -224,6 +231,64 @@ pub async fn remove_org_member(
         Err(e) => {
             error!("Failed removing org member: {e}");
             HttpResponse::BadRequest().body("Failed removing org member")
+        }
+    }
+}
+
+/// Transfer ownership of the organization to another existing member. The
+/// caller (current owner) is demoted to member in the same operation. Owner only.
+#[utoipa::path(
+    post,
+    path = "/api/orgs/{id}/transfer",
+    params(("id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")),
+    request_body = TransferOrgOwnershipReq,
+    tag = "org",
+)]
+pub async fn transfer_org_ownership(
+    state: web::Data<AppState>,
+    path: web::Path<Uuid>,
+    req: web::Json<TransferOrgOwnershipReq>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    let org_id = path.into_inner();
+    require_org_owner!(&state, &org_id, &ext_data.user_id);
+
+    if req.new_owner_id == ext_data.user_id {
+        return HttpResponse::BadRequest().body("Cannot transfer ownership to yourself");
+    }
+
+    // verify the target is an existing member of this org
+    let is_member = match permission_service::check_org_permission(
+        &state,
+        &org_id,
+        &req.new_owner_id,
+        OrgRole::Member,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Failed checking new owner membership: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    if !is_member {
+        return HttpResponse::BadRequest()
+            .body("New owner must already be a member of the org");
+    }
+
+    match org_repository::transfer_org_ownership(
+        &state.sb_client,
+        &org_id,
+        &ext_data.user_id,
+        &req.new_owner_id,
+    )
+    .await
+    {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(e) => {
+            error!("Failed transferring org ownership: {e}");
+            HttpResponse::BadRequest().body("Failed transferring ownership")
         }
     }
 }

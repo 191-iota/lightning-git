@@ -17,6 +17,7 @@ use crate::handler::org_handler::list_my_orgs;
 use crate::handler::org_handler::list_org_members;
 use crate::handler::org_handler::list_org_projects;
 use crate::handler::org_handler::remove_org_member;
+use crate::handler::org_handler::transfer_org_ownership;
 use crate::handler::org_handler::update_org;
 use crate::handler::overlay_handler::create_active_overlay;
 use crate::handler::overlay_handler::get_overlay;
@@ -117,7 +118,8 @@ pub fn init_api_scope(cfg: &mut web::ServiceConfig) {
                 "/orgs/{id}/members/{user_id}",
                 web::delete().to(remove_org_member),
             )
-            .route("/orgs/{id}/projects", web::get().to(list_org_projects)),
+            .route("/orgs/{id}/projects", web::get().to(list_org_projects))
+            .route("/orgs/{id}/transfer", web::post().to(transfer_org_ownership)),
     );
 }
 

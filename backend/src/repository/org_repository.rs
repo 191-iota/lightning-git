@@ -99,6 +99,62 @@ pub async fn add_org_member(
     })
 }
 
+/// Update a single member's role in an org. Resolves the membership row id
+/// by (org_id, user_id) first because supabase_rs needs the row id to update.
+async fn update_org_member_role(
+    db: &SupabaseClient,
+    org_id: &Uuid,
+    user_id: &Uuid,
+    role: OrgRole,
+) -> Result<(), RepoError> {
+    let rows = db
+        .select("organization_members")
+        .eq("org_id", org_id.to_string().as_str())
+        .eq("user_id", user_id.to_string().as_str())
+        .columns(vec!["id"])
+        .limit(1)
+        .execute()
+        .await
+        .map_err(|e| {
+            error!("Failed locating org membership for role update: {e}");
+            RepoError::ExtractionError(String::from("Failed locating org membership"))
+        })?;
+
+    let membership_id = rows
+        .first()
+        .and_then(|r| r.get("id"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| RepoError::NotFound(String::from("Org membership not found")))?
+        .to_string();
+
+    db.update(
+        "organization_members",
+        membership_id.as_str(),
+        json!({ "role": role.to_string() }),
+    )
+    .await
+    .map_err(|e| {
+        error!("Failed updating org membership role: {e}");
+        RepoError::UpdateError(String::from("Failed updating org member role"))
+    })?;
+    Ok(())
+}
+
+/// Promote a member to owner and demote the current owner to member.
+/// Two-step, not transactional: if the second update fails, the org may
+/// temporarily have two owners or zero. Caller is the current owner and is
+/// expected to retry on failure.
+pub async fn transfer_org_ownership(
+    db: &SupabaseClient,
+    org_id: &Uuid,
+    current_owner: &Uuid,
+    new_owner: &Uuid,
+) -> Result<(), RepoError> {
+    update_org_member_role(db, org_id, new_owner, OrgRole::Owner).await?;
+    update_org_member_role(db, org_id, current_owner, OrgRole::Member).await?;
+    Ok(())
+}
+
 /// Locate the membership row by (org_id, user_id) and delete by row id.
 /// Two-step because supabase_rs doesn't accept compound predicates on delete.
 pub async fn remove_org_member(
