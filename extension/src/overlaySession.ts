@@ -1,6 +1,12 @@
 import * as vscode from "vscode";
 import WebSocket from "ws";
-import { LightningGitClient, type ConflictHunk, type MergeConflict } from "./client";
+import {
+  LightningGitClient,
+  type Comment,
+  type ConflictHunk,
+  type MergeConflict,
+  type ProjectMember,
+} from "./client";
 
 interface OverlayChangeRequest {
   user_id: string;
@@ -21,11 +27,17 @@ export class OverlaySession {
   private peekHideTimer: ReturnType<typeof setTimeout> | undefined;
   private conflictPeekHideTimer: ReturnType<typeof setTimeout> | undefined;
   private conflictPollTimer: ReturnType<typeof setInterval> | undefined;
+  private commentPollTimer: ReturnType<typeof setInterval> | undefined;
 
   private activeFile: string | undefined;
   private activeBranch: string | undefined;
+  private pendingPath: string | undefined;
   private readonly teammateChanges = new Map<string, TeammateChange>();
   private conflicts: MergeConflict[] = [];
+  private comments: Comment[] = [];
+  // user_id -> display_name, refreshed when the session starts. fallback to
+  // a short uuid prefix for users not in the cache.
+  private members = new Map<string, string>();
 
   private readonly statusBarItem: vscode.StatusBarItem;
   private readonly conflictStatusBarItem: vscode.StatusBarItem;
@@ -55,10 +67,21 @@ export class OverlaySession {
     },
   });
 
+  private readonly commentDecoration = vscode.window.createTextEditorDecorationType({
+    after: {
+      margin: "0 0 0 2em",
+      color: "#8ab4f888",
+      fontStyle: "italic",
+    },
+    overviewRulerColor: "#8ab4f8",
+    overviewRulerLane: vscode.OverviewRulerLane.Right,
+  });
+
   private showingPeek = false;
   private showingConflicts = false;
 
   private static readonly CONFLICT_POLL_INTERVAL_MS = 30_000;
+  private static readonly COMMENT_POLL_INTERVAL_MS = 5_000;
 
   constructor(
     private readonly client: LightningGitClient,
@@ -78,6 +101,8 @@ export class OverlaySession {
   }
 
   async start(): Promise<void> {
+    void this.refreshMembers();
+
     this.disposables.push(
       vscode.commands.registerCommand("lightning-git.peekTeammates", () => {
         this.togglePeek();
@@ -91,6 +116,12 @@ export class OverlaySession {
     );
 
     this.disposables.push(
+      vscode.languages.registerHoverProvider({ scheme: "file" }, {
+        provideHover: (document, position) => this.provideCommentHover(document, position),
+      }),
+    );
+
+    this.disposables.push(
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         this.hidePeek();
         this.hideConflictPeek();
@@ -99,9 +130,24 @@ export class OverlaySession {
           return;
         }
 
-        this.openDocumentOverlay(editor.document).catch((error: unknown) => {
-          const message = error instanceof Error ? error.message : String(error);
-          void vscode.window.showErrorMessage(`Failed to connect overlay: ${message}`);
+        this.openDocumentOverlay(editor.document)
+          .then(() => this.renderCommentDecorations())
+          .catch((error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error);
+            void vscode.window.showErrorMessage(`Failed to connect overlay: ${message}`);
+          });
+      }),
+    );
+
+    // untitled docs become real files on save without firing
+    // onDidChangeActiveTextEditor (the editor instance is the same, only the
+    // URI flips from "untitled:..." to "file:..."). hook save so the new file
+    // gets an overlay registered exactly like one opened from the tree.
+    this.disposables.push(
+      vscode.workspace.onDidSaveTextDocument((document) => {
+        if (document.uri.scheme !== "file") return;
+        this.openDocumentOverlay(document).catch((error: unknown) => {
+          console.error("Lightning Git: openDocumentOverlay failed on save", error);
         });
       }),
     );
@@ -148,6 +194,7 @@ export class OverlaySession {
     this.ws = undefined;
 
     this.stopConflictPolling();
+    this.stopCommentPolling();
 
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
@@ -174,11 +221,13 @@ export class OverlaySession {
     this.disposables.length = 0;
     this.teammateChanges.clear();
     this.conflicts = [];
+    this.comments = [];
 
     this.statusBarItem.dispose();
     this.conflictStatusBarItem.dispose();
     this.peekDecoration.dispose();
     this.conflictDecoration.dispose();
+    this.commentDecoration.dispose();
   }
 
   private async openDocumentOverlay(document: vscode.TextDocument): Promise<void> {
@@ -194,26 +243,42 @@ export class OverlaySession {
     if (this.activeFile === relativePath && this.activeBranch === branch) {
       return;
     }
+    // when an untitled doc gets saved, both onDidSaveTextDocument and
+    // onDidChangeActiveTextEditor can fire for the same path; the second one
+    // would close the WS that the first one just opened. drop concurrent opens
+    // of the same path here.
+    if (this.pendingPath === relativePath) {
+      return;
+    }
+    this.pendingPath = relativePath;
 
-    this.ws?.close();
+    try {
+      this.ws?.close();
 
-    this.hidePeek();
-    this.hideConflictPeek();
+      this.hidePeek();
+      this.hideConflictPeek();
 
-    this.activeFile = relativePath;
-    this.activeBranch = branch;
-    this.teammateChanges.clear();
-    this.conflicts = [];
+      this.activeFile = relativePath;
+      this.activeBranch = branch;
+      this.teammateChanges.clear();
+      this.conflicts = [];
+      this.comments = [];
 
-    this.updateStatusBar();
-    this.updateConflictStatusBar();
+      this.updateStatusBar();
+      this.updateConflictStatusBar();
 
-    await this.client.createOverlay(this.projectId, this.userId, branch, relativePath);
+      await this.client.createOverlay(this.projectId, this.userId, branch, relativePath);
 
-    this.startConflictPolling();
+      this.startConflictPolling();
+      this.startCommentPolling();
 
-    const wsUrl = await this.client.getOverlayWsUrl(this.projectId, this.userId, relativePath);
-    await this.connectWebSocket(wsUrl, relativePath);
+      const wsUrl = await this.client.getOverlayWsUrl(this.projectId, this.userId, relativePath);
+      await this.connectWebSocket(wsUrl, relativePath);
+    } finally {
+      if (this.pendingPath === relativePath) {
+        this.pendingPath = undefined;
+      }
+    }
   }
 
   private connectWebSocket(wsUrl: string, relativePath: string): Promise<void> {
@@ -236,12 +301,9 @@ export class OverlaySession {
 
       ws.on("close", (code: number, reason: Buffer) => {
         const reasonText = reason.toString();
-
-        if (code !== 1000 && code !== 1005) {
-          void vscode.window.showWarningMessage(
-            `Lightning Git overlay closed (${code})${reasonText ? `: ${reasonText}` : ""}`,
-          );
-        }
+        console.log(
+          `Lightning Git overlay closed (${code})${reasonText ? `: ${reasonText}` : ""}`,
+        );
       });
     });
   }
@@ -271,71 +333,30 @@ export class OverlaySession {
   }
 
   private handleIncomingMessage(raw: string): void {
-    let parsed: unknown;
-
+    let change: { user_id?: unknown; content?: unknown; line_section?: unknown };
     try {
-      parsed = JSON.parse(raw);
+      change = JSON.parse(raw);
     } catch {
-      console.warn("Lightning Git received non-JSON overlay message", raw);
       return;
     }
-
-    if (!parsed || typeof parsed !== "object") {
+    if (typeof change.user_id !== "string" || change.user_id === this.userId) {
       return;
     }
+    const content = typeof change.content === "string" ? change.content : "";
+    const ls = change.line_section;
+    const lines: [number, number] =
+      Array.isArray(ls) && typeof ls[0] === "number" && typeof ls[1] === "number"
+        ? [ls[0], ls[1]]
+        : [0, 0];
 
-    const message = parsed as Record<string, unknown>;
-    const change = this.unwrapChangeMessage(message);
-
-    const userId = this.readString(change, "user_id", "userId", "User_id");
-
-    if (!userId || userId === this.userId) {
-      return;
-    }
-
-    const content = this.readString(change, "content", "Content") ?? "";
-    const lineSection = this.readLineSection(change);
-
-    this.teammateChanges.set(userId, {
+    this.teammateChanges.set(change.user_id, {
       content,
-      lines: lineSection,
+      lines,
       lastUpdate: Date.now(),
     });
 
     this.updateStatusBar();
     this.flashStatusBar();
-  }
-
-  private unwrapChangeMessage(message: Record<string, unknown>): Record<string, unknown> {
-    const nested = message.Change ?? message.change;
-
-    if (nested && typeof nested === "object") {
-      return nested as Record<string, unknown>;
-    }
-
-    return message;
-  }
-
-  private readString(source: Record<string, unknown>, ...keys: string[]): string | undefined {
-    for (const key of keys) {
-      const value = source[key];
-
-      if (typeof value === "string") {
-        return value;
-      }
-    }
-
-    return undefined;
-  }
-
-  private readLineSection(source: Record<string, unknown>): [number, number] {
-    const value = source.line_section ?? source.lineSection ?? source.Line_section;
-
-    if (Array.isArray(value) && value.length >= 2 && typeof value[0] === "number" && typeof value[1] === "number") {
-      return [value[0], value[1]];
-    }
-
-    return [0, 0];
   }
 
   private togglePeek(): void {
@@ -573,6 +594,116 @@ export class OverlaySession {
       clearInterval(this.conflictPollTimer);
       this.conflictPollTimer = undefined;
     }
+  }
+
+  private async pollComments(): Promise<void> {
+    if (!this.activeFile) {
+      return;
+    }
+    this.comments = await this.client.listComments(this.projectId, this.activeFile);
+    this.renderCommentDecorations();
+  }
+
+  private startCommentPolling(): void {
+    this.stopCommentPolling();
+    void this.pollComments();
+    this.commentPollTimer = setInterval(() => {
+      void this.pollComments();
+    }, OverlaySession.COMMENT_POLL_INTERVAL_MS);
+  }
+
+  private stopCommentPolling(): void {
+    if (this.commentPollTimer) {
+      clearInterval(this.commentPollTimer);
+      this.commentPollTimer = undefined;
+    }
+  }
+
+  /// Refreshes the cached project members map. Best-effort: failure leaves the
+  /// cache untouched and authors fall back to a short uuid prefix.
+  private async refreshMembers(): Promise<void> {
+    const list = await this.client.listProjectMembers(this.projectId);
+    this.members = new Map(list.map((m: ProjectMember) => [m.id, m.display_name]));
+  }
+
+  /// Returns the rendered author name for a comment: "you" for the caller,
+  /// the cached display name otherwise, or a short uuid prefix as fallback.
+  private authorLabel(userId: string): string {
+    if (userId === this.userId) return "you";
+    return this.members.get(userId) ?? userId.slice(0, 8);
+  }
+
+  private renderCommentDecorations(): void {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      return;
+    }
+
+    const byLine = new Map<number, Comment[]>();
+    for (const c of this.comments) {
+      const lineIdx = Math.max(0, Math.min(c.line - 1, editor.document.lineCount - 1));
+      const list = byLine.get(lineIdx) ?? [];
+      list.push(c);
+      byLine.set(lineIdx, list);
+    }
+
+    const decorations: vscode.DecorationOptions[] = [];
+    for (const [lineIdx, list] of byLine) {
+      const first = list[0];
+      const label =
+        list.length === 1
+          ? `${this.authorLabel(first.user_id)}: ${this.truncate(first.text, 50)}`
+          : `${list.length} comments (latest by ${this.authorLabel(list[list.length - 1].user_id)})`;
+
+      decorations.push({
+        range: new vscode.Range(lineIdx, 0, lineIdx, editor.document.lineAt(lineIdx).text.length),
+        renderOptions: {
+          after: { contentText: `  ${label}` },
+        },
+      });
+    }
+
+    editor.setDecorations(this.commentDecoration, decorations);
+  }
+
+  private provideCommentHover(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+  ): vscode.Hover | undefined {
+    if (document !== vscode.window.activeTextEditor?.document) {
+      return undefined;
+    }
+    const line = position.line + 1;
+    const here = this.comments.filter((c) => c.line === line);
+    if (here.length === 0) {
+      return undefined;
+    }
+
+    const md = new vscode.MarkdownString();
+    md.isTrusted = false;
+    md.supportHtml = false;
+    here
+      .slice()
+      .sort((a, b) => a.created_at - b.created_at)
+      .forEach((c, idx) => {
+        if (idx > 0) md.appendMarkdown("\n\n---\n\n");
+        md.appendMarkdown(
+          `**${this.escapeMd(this.authorLabel(c.user_id))}** · ${this.fmtAge(c.created_at)}\n\n${this.escapeMd(c.text)}`,
+        );
+      });
+    return new vscode.Hover(md);
+  }
+
+  private fmtAge(unixSecs: number): string {
+    const ageSec = Math.max(0, Math.floor(Date.now() / 1000 - unixSecs));
+    if (ageSec < 60) return `${ageSec}s ago`;
+    if (ageSec < 3600) return `${Math.floor(ageSec / 60)}m ago`;
+    if (ageSec < 86400) return `${Math.floor(ageSec / 3600)}h ago`;
+    return `${Math.floor(ageSec / 86400)}d ago`;
+  }
+
+  private escapeMd(text: string): string {
+    return text.replace(/([\\`*_{}\[\]()#+\-.!])/g, "\\$1");
   }
 
   private truncate(value: string, maxLength: number): string {
