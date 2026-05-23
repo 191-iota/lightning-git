@@ -54,6 +54,7 @@ CREATE TABLE task (
     name VARCHAR NOT NULL,
     branch_name VARCHAR NOT NULL,
     task_type VARCHAR,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
     project_id UUID REFERENCES project(id) ON DELETE CASCADE
 );
 
