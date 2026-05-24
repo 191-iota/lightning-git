@@ -55,6 +55,8 @@ CREATE TABLE task (
     branch_name VARCHAR NOT NULL,
     task_type VARCHAR,
     archived BOOLEAN NOT NULL DEFAULT FALSE,
+    kanban_column VARCHAR NOT NULL DEFAULT 'in_progress'
+        CHECK (kanban_column IN ('todo', 'in_progress', 'review', 'merged')),
     project_id UUID REFERENCES project(id) ON DELETE CASCADE
 );
 
