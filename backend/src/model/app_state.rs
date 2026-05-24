@@ -42,14 +42,14 @@ impl AppState {
         branch: String,
     ) -> broadcast::Sender<OverlayChangeReq> {
         let project_state = self.repo_states.entry(project_id).or_insert_with(|| {
-            let (activity_tx, _) = broadcast::channel(16);
+            let (activity_tx, _) = broadcast::channel(128);
             ProjectLiveState {
                 overlays: DashMap::new(),
                 activity_tx,
             }
         });
         let mut overlay = project_state.overlays.entry(file_name).or_insert_with(|| {
-            let (tx, _rx) = broadcast::channel(16);
+            let (tx, _rx) = broadcast::channel(128);
             Overlay {
                 original_content: initial_content.clone(),
                 user_contents: DashMap::new(),
@@ -110,7 +110,7 @@ impl AppState {
     // any file overlay exists yet.
     pub fn ensure_project_state(&self, project_id: Uuid) -> broadcast::Sender<Vec<ActiveEdit>> {
         let entry = self.repo_states.entry(project_id).or_insert_with(|| {
-            let (activity_tx, _) = broadcast::channel(16);
+            let (activity_tx, _) = broadcast::channel(128);
             ProjectLiveState {
                 overlays: DashMap::new(),
                 activity_tx,
