@@ -1,5 +1,6 @@
 use crate::macros::macros::require_project_permission;
 use crate::model::app_state::AppState;
+use crate::model::overlay::OverlayChangeReq;
 use crate::model::overlay::extract_overlay;
 use crate::model::user::MiddlewareData;
 use crate::service::git_service;
@@ -79,10 +80,25 @@ pub async fn create_active_overlay(
     .await
     .unwrap_or_default();
 
-    state.get_or_create_overlay(proj_id, file_name, user_id, content, branch);
+    let overlay_tx = state.get_or_create_overlay(
+        proj_id,
+        file_name,
+        user_id,
+        content.clone(),
+        branch,
+    );
 
-    // broadcast so any subscribed web client sees the new session without waiting
-    // for the user to type the first character
+    // push the joining user onto the per-file channel so any subscriber that
+    // connected before this PUT immediately picks them up in the active-editors
+    // panel, instead of waiting for the new user to type their first keystroke.
+    let _ = overlay_tx.send(OverlayChangeReq {
+        user_id,
+        content,
+        line_section: (0, 0),
+    });
+
+    // also refresh the project-wide activity snapshot so the board view and the
+    // dashboard count reflect the new session.
     let activity_tx = state
         .repo_states
         .get(&proj_id)
