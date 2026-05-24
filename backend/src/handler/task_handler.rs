@@ -1,6 +1,7 @@
 use crate::macros::macros::require_project_permission;
 use crate::model::app_state::AppState;
 use crate::model::task::SetArchivedReq;
+use crate::model::task::SetColumnReq;
 use crate::model::user::MiddlewareData;
 use crate::repository::task_repository;
 use actix_web::HttpResponse;
@@ -93,6 +94,49 @@ pub async fn set_task_archived(
         Err(e) => {
             error!("Failed updating archive flag: {e}");
             HttpResponse::BadRequest().body("Failed updating task")
+        }
+    }
+}
+
+/// Move a task to a kanban column. Persisted globally so the board state is
+/// shared across users and devices instead of living in browser storage.
+#[utoipa::path(
+    patch,
+    path = "/api/tasks/{task_id}/column",
+    params(("task_id" = Uuid, Path, example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")),
+    request_body = SetColumnReq,
+    tag = "task",
+)]
+pub async fn set_task_column(
+    state: web::Data<AppState>,
+    path: web::Path<Uuid>,
+    body: web::Json<SetColumnReq>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    let task_id = path.into_inner();
+
+    let project_id = match task_repository::project_id_of_task(&state.sb_client, &task_id).await {
+        Ok(Some(pid)) => pid,
+        Ok(None) => return HttpResponse::NotFound().finish(),
+        Err(e) => {
+            error!("Failed locating task project: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    require_project_permission!(&state, &project_id, &ext_data.user_id);
+
+    match task_repository::set_kanban_column(
+        &state.sb_client,
+        &task_id,
+        body.kanban_column.as_db_str(),
+    )
+    .await
+    {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(e) => {
+            error!("Failed updating kanban_column: {e}");
+            HttpResponse::BadRequest().body("Failed updating task column")
         }
     }
 }
