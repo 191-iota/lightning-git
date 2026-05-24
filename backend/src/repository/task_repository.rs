@@ -83,6 +83,24 @@ pub async fn set_archived(
     Ok(())
 }
 
+pub async fn set_kanban_column(
+    db: &SupabaseClient,
+    task_id: &Uuid,
+    column: &str,
+) -> Result<(), RepoError> {
+    db.update(
+        "task",
+        task_id.to_string().as_str(),
+        json!({ "kanban_column": column }),
+    )
+    .await
+    .map_err(|e| {
+        error!("Failed updating task kanban_column: {e}");
+        RepoError::UpdateError(String::from("Failed updating task column"))
+    })?;
+    Ok(())
+}
+
 /// Resolve which project a task belongs to. Used to scope permission checks
 /// when the caller only has the task id (e.g. the archive endpoint).
 pub async fn project_id_of_task(
