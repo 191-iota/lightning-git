@@ -45,6 +45,7 @@ use crate::handler::project_handler::__path_update_project;
 use crate::handler::task_handler::__path_get_project_tasks;
 use crate::handler::task_handler::__path_get_task;
 use crate::handler::task_handler::__path_set_task_archived;
+use crate::handler::task_handler::__path_set_task_column;
 use crate::handler::user_handler::__path_get_user_id_by_username;
 use crate::handler::user_handler::__path_login;
 use crate::handler::user_handler::__path_refresh_token;
@@ -71,7 +72,9 @@ use crate::model::project::ProjectRes;
 use crate::model::project::ProjectRole;
 use crate::model::project::ProjectTreeRes;
 use crate::model::project::UpdateProjectReq;
+use crate::model::task::KanbanColumn;
 use crate::model::task::SetArchivedReq;
+use crate::model::task::SetColumnReq;
 use crate::model::task::TaskRes;
 use crate::model::user::LoginPayload;
 use crate::model::user::RefreshReq;
@@ -136,6 +139,7 @@ async fn main() -> std::io::Result<()> {
             get_task,
             get_project_tasks,
             set_task_archived,
+            set_task_column,
             get_project_file,
             list_project_tree,
             list_project_branches,
@@ -171,6 +175,8 @@ async fn main() -> std::io::Result<()> {
             schemas(
                 TaskRes,
                 SetArchivedReq,
+                SetColumnReq,
+                KanbanColumn,
                 TaskType,
                 CreateProjectReq,
                 ProjectRes,
