@@ -11,9 +11,11 @@ use crate::model::project::ProjectRole;
 use crate::model::project::ProjectTreeRes;
 use crate::model::project::UpdateProjectReq;
 use crate::model::user::MiddlewareData;
+use crate::model::org::OrgRole;
 use crate::repository::project_repository;
 use crate::repository::user_repository;
 use crate::service::git_service;
+use crate::service::permission_service;
 use crate::service::project_service;
 use crate::service::project_service::inject_token;
 use actix_web::HttpResponse;
@@ -149,6 +151,50 @@ pub async fn add_project_member(
     require_project_admin!(&state, &proj_id, &ext_data.user_id);
 
     let req = req.into_inner();
+
+    // a project member must already belong to the project's org. otherwise
+    // we'd let an admin invite arbitrary users who never accepted the org.
+    let project_row = match project_repository::find_project_by_id(
+        &state.sb_client,
+        proj_id.to_string(),
+    )
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            error!("Failed loading project for org-membership check: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    let org_id = match project_row
+        .get("org_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| uuid::Uuid::parse_str(s).ok())
+    {
+        Some(id) => id,
+        None => {
+            error!("Project {proj_id} has no resolvable org_id");
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    match permission_service::check_org_permission(
+        &state,
+        &org_id,
+        &req.user_id,
+        OrgRole::Member,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => {
+            return HttpResponse::BadRequest()
+                .body("User must already be a member of this org");
+        }
+        Err(e) => {
+            error!("Failed checking candidate org membership: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
+    }
 
     match project_repository::get_project_member_role(&state.sb_client, &proj_id, &req.user_id)
         .await
