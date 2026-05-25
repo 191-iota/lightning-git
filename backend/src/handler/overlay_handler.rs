@@ -1,6 +1,6 @@
 use crate::macros::macros::require_project_permission;
 use crate::model::app_state::AppState;
-use crate::model::overlay::OverlayChangeReq;
+use crate::model::overlay::WsBroadcast;
 use crate::model::overlay::extract_overlay;
 use crate::model::user::MiddlewareData;
 use crate::service::git_service;
@@ -91,7 +91,7 @@ pub async fn create_active_overlay(
     // push the joining user onto the per-file channel so any subscriber that
     // connected before this PUT immediately picks them up in the active-editors
     // panel, instead of waiting for the new user to type their first keystroke.
-    let _ = overlay_tx.send(OverlayChangeReq {
+    let _ = overlay_tx.send(WsBroadcast::Overlay {
         user_id,
         content,
         line_section: (0, 0),

@@ -2,9 +2,11 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::process::Command;
+use tokio::sync::Mutex;
 
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
@@ -18,6 +20,20 @@ use crate::error::custom_errors::LGitIoError;
 const FETCH_TTL: Duration = Duration::from_secs(30);
 static LAST_FETCH: Lazy<DashMap<PathBuf, Instant>> = Lazy::new(DashMap::new);
 
+// per-repo mutex so concurrent maybe_fetch calls dont stampede git's
+// index.lock. without this, calculate_live_diff's parallel read_file
+// invocations could fire N simultaneous "git fetch" subprocesses on the
+// same repo and deadlock on the index lock, which is what made the merge
+// endpoint hang.
+static FETCH_LOCKS: Lazy<DashMap<PathBuf, Arc<Mutex<()>>>> = Lazy::new(DashMap::new);
+
+fn fetch_lock_for(path: &Path) -> Arc<Mutex<()>> {
+    FETCH_LOCKS
+        .entry(path.to_path_buf())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
+}
+
 /// Fetches all remote branches and prunes deleted refs. Always hits the network.
 pub async fn fetch(path: &Path) -> Result<(), LGitIoError> {
     handle_git_subprocess(path, &["fetch", "--prune"]).await?;
@@ -27,7 +43,17 @@ pub async fn fetch(path: &Path) -> Result<(), LGitIoError> {
 
 /// Like "fetch", but skips when the last successful fetch is within FETCH_TTL.
 /// Use this from request-driven code paths so a burst of reads doesnt thrash.
+/// Concurrent callers serialize on a per-repo mutex; the second caller will
+/// see the freshly-bumped timestamp and skip its own fetch.
 pub async fn maybe_fetch(path: &Path) -> Result<(), LGitIoError> {
+    if let Some(t) = LAST_FETCH.get(path) {
+        if t.elapsed() < FETCH_TTL {
+            return Ok(());
+        }
+    }
+    let lock = fetch_lock_for(path);
+    let _guard = lock.lock().await;
+    // recheck after acquiring the lock — somebody else may have just fetched.
     if let Some(t) = LAST_FETCH.get(path) {
         if t.elapsed() < FETCH_TTL {
             return Ok(());

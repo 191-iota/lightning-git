@@ -18,6 +18,8 @@ use super::overlay_service::extract_overlay_file_contents;
 
 /// Predict merge conflicts on one file across all live branches.
 /// Diffs each branch (live overlay or committed) against main and reports overlapping hunks.
+/// Known limitation: stale-but-not-deleted branches still get scanned each call.
+/// Delete merged branches to keep this fast.
 pub async fn calculate_live_diff(
     file_name: String,
     project_id: Uuid,
@@ -48,63 +50,58 @@ pub async fn calculate_live_diff(
 
     let mut active_branches = git_service::list_remote_branches(base).await?;
 
-    // 2. Get all active remote branches
     let file_overlays = extract_overlay_file_contents(file_name.clone(), project_id, state)?;
-    // <(branch_name, content)>
-    let mut contents: Vec<(String, String)> = Vec::new();
-    // Overlays take precedence; remove redundant branches
+    // (branch, user_id, content) — user_id is Some only for live-overlay rows.
+    let mut sources: Vec<(String, Option<uuid::Uuid>, String)> = Vec::new();
     file_overlays.into_iter().for_each(|f| {
-        if active_branches.contains(&f.0) {
-            active_branches.remove(&f.0);
+        if active_branches.contains(&f.branch) {
+            active_branches.remove(&f.branch);
         }
-        // Add overlay contents
-        contents.push((f.0, f.1));
+        sources.push((f.branch, Some(f.user_id), f.content));
     });
 
-    // Add branch contents
-    let mut branch_contents: Vec<(String, String)> = stream::iter(active_branches.iter().cloned())
+    // A branch can legitimately not contain this file (added on the current
+    // branch only), so a read miss is skipped, not unwrap-panicked.
+    let mut branch_sources: Vec<(String, Option<uuid::Uuid>, String)> = stream::iter(active_branches.iter().cloned())
         .map(|branch: String| async move {
-            (
-                branch.clone(),
-                git_service::read_file(base, branch.as_str(), file_path)
-                    .await
-                    .unwrap(),
-            )
+            match git_service::read_file(base, branch.as_str(), file_path).await {
+                Ok(content) => Some((branch, None, content)),
+                Err(_) => None,
+            }
         })
         .buffer_unordered(10)
-        .collect::<Vec<(String, String)>>()
+        .filter_map(|r| async move { r })
+        .collect::<Vec<(String, Option<uuid::Uuid>, String)>>()
         .await;
 
-    // 6. Combine all contents (overlays + branches)
-    contents.append(&mut branch_contents);
+    sources.append(&mut branch_sources);
 
-    // 7. Compute diff against base for combined contents
-    let diff = compute_combined_diff(base_content, contents);
-    // 8. Compute merge conflicts based on each diff through overlap checks
+    let diff = compute_combined_diff(base_content, sources);
     let conflicts = compute_conflicts(diff);
 
     Ok(conflicts)
 }
 
-/// Decompose a single branch's diff against base into contiguous hunks of
-/// changed lines, tagged with the branch name for later overlap analysis.
+/// Decompose each source's diff against base into contiguous hunks of changed
+/// lines. Each hunk is tagged with the branch and (for live overlays) the
+/// editing user id, so the UI can attribute who proposed what.
 pub fn compute_combined_diff(
     base_content: String,
-    branch_contents: Vec<(String, String)>,
+    sources: Vec<(String, Option<uuid::Uuid>, String)>,
 ) -> Vec<Hunk> {
     let mut all_hunks: Vec<Hunk> = Vec::new();
 
-    for (branch, content) in branch_contents {
+    for (branch, user_id, content) in sources {
         if content == base_content {
-            println!("[diff] branch={} IDENTICAL to base, skipping", branch);
             continue;
         }
-        println!(
-            "[diff] branch={} differs from base (base_len={}, branch_len={})",
-            branch,
-            base_content.len(),
-            content.len()
-        );
+        // an empty-content source (file deleted in the branch or never
+        // populated) shows up as a "removed" hunk and clutters the conflict
+        // UI without adding information; the eventual merge will surface the
+        // modify/delete case via git itself.
+        if content.trim().is_empty() {
+            continue;
+        }
 
         let diff = TextDiff::from_lines(&base_content, &content);
         let mut base_line = 0;
@@ -117,6 +114,7 @@ pub fn compute_combined_diff(
                     if let Some(start) = hunk_start.take() {
                         all_hunks.push(Hunk {
                             branch: branch.clone(),
+                            user_id,
                             base_start: start,
                             base_end: base_line,
                             content: std::mem::take(&mut changed_lines),
@@ -141,6 +139,7 @@ pub fn compute_combined_diff(
         if let Some(start) = hunk_start {
             all_hunks.push(Hunk {
                 branch: branch.clone(),
+                user_id,
                 base_start: start,
                 base_end: base_line,
                 content: std::mem::take(&mut changed_lines),
@@ -182,16 +181,19 @@ pub fn compute_conflicts(all_hunks: Vec<Hunk>) -> Vec<Conflict> {
     }
 
     // Only keep groups that are genuine conflicts:
-    // - 2+ distinct branches involved
+    // - 2+ distinct sources (branch OR user) involved. branch is the source
+    //   for committed content; user is the source for live overlays, so two
+    //   users on the same branch with divergent content DO count as a
+    //   conflict between themselves.
     // - at least 2 hunks that differ in what they changed (not all identical edits)
     groups
         .into_iter()
         .filter_map(|(start, end, hunks)| {
-            let mut branches = HashSet::new();
+            let mut sources = HashSet::new();
             for h in &hunks {
-                branches.insert(&h.branch);
+                sources.insert((h.branch.clone(), h.user_id));
             }
-            if branches.len() < 2 {
+            if sources.len() < 2 {
                 return None;
             }
 
