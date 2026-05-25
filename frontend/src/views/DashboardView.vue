@@ -1,22 +1,49 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter, RouterLink } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useOrgStore } from "@/stores/org";
 import { useProjectStore } from "@/stores/project";
+import { useToastStore } from "@/stores/toast";
+import NavBar from "@/components/NavBar.vue";
+import Skeleton from "@/components/Skeleton.vue";
+import TabStrip, { type Tab } from "@/components/TabStrip.vue";
+
+const toast = useToastStore();
+const loading = ref(true);
+
+const currentOrgName = computed(
+  () =>
+    orgStore.orgs.find((o) => o.id === orgStore.currentOrgId)?.name ??
+    "Organization",
+);
+const orgTabs = computed<Tab[]>(() =>
+  orgStore.currentOrgId
+    ? [
+        { label: "Projects", to: { name: "dashboard" } },
+        { label: "Members", to: { name: "org-members", params: { id: orgStore.currentOrgId } } },
+      ]
+    : [],
+);
 
 const authStore = useAuthStore();
 const orgStore = useOrgStore();
 const projectStore = useProjectStore();
 const router = useRouter();
-const error = ref<string | null>(null);
 
 // project_id -> number of active editors right now
 const activeCounts = ref<Record<string, number>>({});
 
 onMounted(async () => {
   if (!orgStore.currentOrgId) return;
+  loading.value = true;
   try {
+    // hydrate the orgs list so currentOrgName resolves to the real name
+    // instead of the "Organization" fallback. on cold loads (refresh, deep
+    // link) the dashboard mounts before the org list has been fetched.
+    if (orgStore.orgs.length === 0) {
+      await orgStore.fetch().catch(() => undefined);
+    }
     await projectStore.fetch(orgStore.currentOrgId);
     // pull current activity per project so dashboard dots reflect realtime state
     await Promise.all(
@@ -26,7 +53,9 @@ onMounted(async () => {
       }),
     );
   } catch {
-    error.value = "Failed to load projects";
+    toast.error("Could not load projects.");
+  } finally {
+    loading.value = false;
   }
 });
 
@@ -39,63 +68,86 @@ async function onLogout() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-zinc-950 text-zinc-100 px-6 py-8">
-    <header class="flex items-center justify-between mb-8">
-      <h1 class="text-xl font-semibold">Lightning Git</h1>
-      <div class="flex items-center gap-4">
-        <span class="text-sm text-zinc-400">{{ authStore.user?.email }}</span>
-        <RouterLink to="/orgs" class="text-sm text-zinc-300 hover:text-zinc-100">
-          Switch org
-        </RouterLink>
-        <button class="text-sm text-zinc-300 hover:text-zinc-100" @click="onLogout">
-          Sign out
-        </button>
-      </div>
-    </header>
+  <div class="min-h-screen bg-lg-bg text-lg-text">
+    <NavBar>
+      <RouterLink to="/pricing" class="lg-link">Pricing</RouterLink>
+      <RouterLink to="/orgs" class="lg-link">Switch org</RouterLink>
+      <span class="text-lg-text-muted hidden sm:inline">{{ authStore.user?.email }}</span>
+      <button class="lg-link" @click="onLogout">Sign out</button>
+    </NavBar>
 
-    <main>
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-medium">Projects</h2>
+    <main class="lg-container py-10">
+      <header class="mb-6 flex items-end justify-between gap-4">
+        <div class="flex flex-col gap-2 items-start">
+          <span class="lg-scope lg-scope-org">Organization</span>
+          <h1 class="text-3xl font-bold">{{ currentOrgName }}</h1>
+        </div>
         <RouterLink
+          v-if="projectStore.projects.length > 0"
           to="/projects/new"
-          class="bg-zinc-100 text-zinc-900 rounded px-3 py-1.5 text-sm font-medium"
+          class="lg-btn-primary"
         >
-          Create project
+          New project
+        </RouterLink>
+      </header>
+
+      <TabStrip :tabs="orgTabs" class="mb-8" />
+
+      <div class="flex items-end justify-between mb-4">
+        <h2 class="text-lg font-semibold">Projects</h2>
+        <span class="text-sm text-lg-text-muted">
+          {{ projectStore.projects.length }} total
+        </span>
+      </div>
+
+      <ul v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <li v-for="i in 4" :key="i" class="lg-card p-5 space-y-3">
+          <div class="flex items-center gap-2">
+            <Skeleton width="0.5rem" height="0.5rem" rounded="full" />
+            <Skeleton width="60%" height="0.875rem" />
+          </div>
+          <Skeleton width="80%" height="0.625rem" />
+        </li>
+      </ul>
+
+      <div
+        v-else-if="projectStore.projects.length === 0"
+        class="lg-card p-10 text-center"
+      >
+        <p class="text-lg-text-sec mb-5 text-sm">No projects in this organization.</p>
+        <RouterLink to="/projects/new" class="lg-btn-primary inline-flex">
+          New project
         </RouterLink>
       </div>
 
-      <p v-if="error" class="text-sm text-red-400 mb-4">{{ error }}</p>
-
-      <div v-if="projectStore.projects.length === 0 && !error" class="text-zinc-500">
-        No projects yet.
-      </div>
-
-      <ul class="space-y-2">
+      <ul v-else-if="projectStore.projects.length > 0" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <RouterLink
           v-for="project in projectStore.projects"
           :key="project.id"
           :to="{ name: 'project', params: { id: project.id } }"
-          class="block border border-zinc-800 rounded p-3 hover:bg-zinc-900"
+          class="lg-card p-5 hover:border-lg-border-strong hover:bg-lg-surface-2 transition-colors group"
         >
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 mb-1">
             <span
               class="inline-block w-2 h-2 rounded-full flex-shrink-0"
-              :class="activeCounts[project.id] ? 'bg-amber-400' : 'bg-zinc-700'"
+              :class="activeCounts[project.id] ? 'bg-lg-accent-bright animate-pulse' : 'bg-lg-text-muted'"
               :title="
                 activeCounts[project.id]
-                  ? `${activeCounts[project.id]} active edits`
+                  ? `${activeCounts[project.id]} ${activeCounts[project.id] === 1 ? 'file' : 'files'} being edited`
                   : 'no live activity'
               "
             ></span>
-            <p class="font-medium">{{ project.name }}</p>
+            <p class="font-semibold text-lg-text group-hover:text-lg-accent-bright transition-colors">
+              {{ project.name }}
+            </p>
             <span
               v-if="activeCounts[project.id]"
-              class="text-xs text-amber-400 ml-1"
+              class="text-xs text-lg-accent-bright ml-auto"
             >
-              {{ activeCounts[project.id] }} editing
+              {{ activeCounts[project.id] }} {{ activeCounts[project.id] === 1 ? "file" : "files" }} edited
             </span>
           </div>
-          <p class="text-xs text-zinc-500 mt-1">{{ project.repo_url }}</p>
+          <p class="text-xs text-lg-text-muted truncate">{{ project.repo_url }}</p>
         </RouterLink>
       </ul>
     </main>
