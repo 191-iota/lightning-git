@@ -14,6 +14,9 @@ export interface Org {
 
 export interface ConflictHunk {
   branch: string;
+  // present for hunks from a live overlay (so the UI can name the editor);
+  // absent for hunks read from a branch's committed content.
+  user_id?: string | null;
   base_start: number;
   base_end: number;
   content: string[];
@@ -153,14 +156,16 @@ export class LightningGitClient {
     }
   }
 
-  async listComments(projectId: string, fileName: string): Promise<Comment[]> {
-    try {
-      const encodedFile = fileName.split("/").map(encodeURIComponent).join("/");
-      const response = await this.http.get(`/api/comments/${projectId}/${encodedFile}`);
-      return response.data as Comment[];
-    } catch {
-      return [];
-    }
+  // Read committed content at origin/{branch}:{path}. used as the base for
+  // client-side live overlay-vs-overlay conflict synthesis so we dont have
+  // to wait for the 60s merge poll to see a teammate's live divergence.
+  async getFileAtBranch(projectId: string, branch: string, path: string): Promise<string> {
+    const response = await this.http.get<string>(`/api/projects/${projectId}/file`, {
+      params: { branch, path },
+      responseType: "text",
+      transformResponse: [(v) => v],
+    });
+    return response.data ?? "";
   }
 
   // Notbremse. Resets the caller's overlay state on the server back to the
