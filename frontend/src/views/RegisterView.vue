@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { useRouter, RouterLink } from "vue-router";
+import { RouterLink } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useToastStore } from "@/stores/toast";
 import NavBar from "@/components/NavBar.vue";
@@ -9,10 +9,11 @@ const email = ref("");
 const username = ref("");
 const password = ref("");
 const submitting = ref(false);
+const registered = ref(false);
+const registeredEmail = ref("");
 
 const authStore = useAuthStore();
 const toast = useToastStore();
-const router = useRouter();
 
 async function onSubmit() {
   submitting.value = true;
@@ -22,8 +23,8 @@ async function onSubmit() {
       username: username.value,
       password: password.value,
     });
-    toast.success("Account created. Please sign in.");
-    await router.push({ name: "login" });
+    registeredEmail.value = email.value;
+    registered.value = true;
   } catch {
     toast.error("Registration failed. The email or username may already be taken.");
   } finally {
@@ -40,7 +41,26 @@ async function onSubmit() {
     </NavBar>
 
     <main class="flex-1 flex items-center justify-center px-4 py-16">
+      <div
+        v-if="registered"
+        class="w-full max-w-md lg-card p-8 space-y-5 text-center"
+      >
+        <h1 class="text-2xl font-semibold">Confirm your email</h1>
+        <p class="text-sm text-lg-text-sec leading-relaxed">
+          We sent a confirmation link to
+          <span class="text-lg-accent-bright font-mono break-all">{{ registeredEmail }}</span>.
+          Click the link in that email, then come back and sign in.
+        </p>
+        <p class="text-xs text-lg-text-muted">
+          Did not receive it? Check your spam folder or try again in a minute.
+        </p>
+        <RouterLink to="/login" class="lg-btn-primary w-full inline-flex">
+          Go to sign in
+        </RouterLink>
+      </div>
+
       <form
+        v-else
         class="w-full max-w-md lg-card p-8 space-y-5"
         @submit.prevent="onSubmit"
       >
@@ -92,6 +112,10 @@ async function onSubmit() {
         >
           {{ submitting ? "Creating..." : "Create account" }}
         </button>
+
+        <p class="text-xs text-lg-text-muted text-center leading-relaxed">
+          You will need to confirm your email before signing in.
+        </p>
 
         <p class="text-sm text-lg-text-sec text-center">
           Already have an account?
