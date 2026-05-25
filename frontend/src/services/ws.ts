@@ -1,8 +1,4 @@
-export interface OverlayChangeMsg {
-  user_id: string;
-  content: string;
-  line_section: [number, number];
-}
+import type { Comment } from "@/types/api";
 
 export interface OverlayUserView {
   user_id: string;
@@ -12,6 +8,15 @@ export interface OverlayUserView {
   updated_at_nanos: number;
 }
 
+/// Tagged WS payload matching the backend's WsBroadcast enum. The per-file
+/// overlay channel carries typing updates, comment lifecycle, and the
+/// initial snapshot pushed on subscription open.
+export type WsMessage =
+  | { kind: "overlay"; user_id: string; content: string; line_section: [number, number] }
+  | { kind: "comment_created"; id: string; user_id: string; line: number; text: string; created_at: number }
+  | { kind: "comment_deleted"; id: string }
+  | { kind: "snapshot"; comments: Comment[]; all_user_contents: OverlayUserView[] };
+
 export interface OverlayWsOpts {
   projectId: string;
   userId: string;
@@ -19,7 +24,7 @@ export interface OverlayWsOpts {
   token: string;
 }
 
-type MessageHandler = (msg: OverlayChangeMsg) => void;
+type MessageHandler = (msg: WsMessage) => void;
 
 export class OverlayWebSocket {
   private socket: WebSocket | null = null;
@@ -46,8 +51,8 @@ export class OverlayWebSocket {
 
     this.socket.onmessage = (event) => {
       try {
-        const change = JSON.parse(event.data) as OverlayChangeMsg;
-        for (const h of this.handlers) h(change);
+        const msg = JSON.parse(event.data) as WsMessage;
+        for (const h of this.handlers) h(msg);
       } catch {
         // ignore malformed
       }
@@ -63,8 +68,8 @@ export class OverlayWebSocket {
     this.handlers.push(handler);
   }
 
-  send(change: OverlayChangeMsg): void {
-    this.socket?.send(JSON.stringify(change));
+  send(msg: WsMessage): void {
+    this.socket?.send(JSON.stringify(msg));
   }
 
   dispose(): void {
