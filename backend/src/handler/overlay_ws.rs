@@ -6,12 +6,15 @@ use actix_web::{
 };
 use actix_ws::Message;
 use futures_util::StreamExt;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::time::Instant;
 use uuid::Uuid;
 
 use crate::model::app_state::AppState;
 use crate::model::overlay::extract_overlay;
-use crate::model::overlay::OverlayChangeReq;
+use crate::model::overlay::Comment;
+use crate::model::overlay::UserOverlayRes;
+use crate::model::overlay::WsBroadcast;
 
 /// Project-wide activity WebSocket. Pushes a Vec<ActiveEdit> snapshot on
 /// connect and on every per-file change anywhere in the project.
@@ -52,10 +55,19 @@ pub async fn ws_project_activity(
                     }
                 }
                 event = rx.recv() => {
-                    let Ok(snapshot) = event else { break };
-                    let text = serde_json::to_string(&snapshot).unwrap();
-                    if session.text(text).await.is_err() {
-                        break;
+                    match event {
+                        Ok(snapshot) => {
+                            let text = serde_json::to_string(&snapshot).unwrap();
+                            if session.text(text).await.is_err() {
+                                break;
+                            }
+                        }
+                        // dropping a message because the receiver fell behind is
+                        // not a fatal error. previously this killed the WS for
+                        // any user whose snapshot arrived during a busy moment,
+                        // which manifested as "the second user never shows up".
+                        Err(RecvError::Lagged(_)) => continue,
+                        Err(RecvError::Closed) => break,
                     }
                 }
             }
@@ -88,31 +100,84 @@ pub async fn ws_overlay_stream(
     let project_id = path.0;
     let user_id = path.1;
     let file_name = path.2;
-    let Some(proj) = state.repo_states.get(&project_id) else {
-        return HttpResponse::NotFound().finish();
-    };
-    let Some(overlay_ref) = extract_overlay(&proj, &file_name) else {
-        return HttpResponse::NotFound().finish();
+
+    // ensure the overlay exists so a viewer-only subscriber (e.g. a browser
+    // tab on a file no one is actively editing) can attach the WS. then
+    // capture the initial snapshot under read guards and drop them before
+    // the WS upgrade so we dont hold DashMap locks across the await.
+    let tx = state.ensure_file_overlay(project_id, &file_name);
+    let (initial_snapshot, mut rx) = {
+        let proj = match state.repo_states.get(&project_id) {
+            Some(p) => p,
+            None => return HttpResponse::InternalServerError().finish(),
+        };
+        let overlay_ref = match extract_overlay(&proj, &file_name) {
+            Some(o) => o,
+            None => return HttpResponse::InternalServerError().finish(),
+        };
+        let comments: Vec<Comment> = overlay_ref
+            .comments
+            .iter()
+            .map(|e| e.value().clone())
+            .collect();
+        let all_user_contents: Vec<UserOverlayRes> = overlay_ref
+            .user_contents
+            .iter()
+            .map(|entry| {
+                let elapsed = entry.value().updated_at.elapsed();
+                UserOverlayRes {
+                    user_id: *entry.key(),
+                    content: entry.value().content.clone(),
+                    edited_sections: entry.value().edited_sections,
+                    updated_at_secs: elapsed.as_secs(),
+                    updated_at_nanos: elapsed.subsec_nanos(),
+                }
+            })
+            .collect();
+        (
+            WsBroadcast::Snapshot {
+                comments,
+                all_user_contents,
+            },
+            tx.subscribe(),
+        )
     };
 
-    // Websocket handshake
     let (res, mut session, mut stream) = actix_ws::handle(&req, body).unwrap();
 
-    let mut rx = overlay_ref.tx.subscribe();
-
-    // viewers (web frontend) can opt in to see their own changes echoed back,
-    // editors (vscode) keep the default self-filter so typing doesnt loop
     let echo_self = req.query_string().contains("echo=true");
 
     // Server -> Client (Outbound)
     actix_web::rt::spawn(async move {
-        while let Ok(change) = rx.recv().await {
-            if change.user_id == user_id && !echo_self {
-                continue;
-            }
-            let text = serde_json::to_string(&change).unwrap();
+        // seed the client with the current comment list + active editors so
+        // they dont need a separate HTTP fetch to populate the UI.
+        if let Ok(text) = serde_json::to_string(&initial_snapshot) {
             if session.text(text).await.is_err() {
-                break;
+                return;
+            }
+        }
+        loop {
+            match rx.recv().await {
+                Ok(msg) => {
+                    // self-filter overlay / suggestion echoes only; comment
+                    // events must reach the originating client too so it
+                    // learns the server-assigned id and timestamp.
+                    let skip = !echo_self
+                        && match &msg {
+                            WsBroadcast::Overlay { user_id: u, .. }
+                            | WsBroadcast::Suggestion { user_id: u, .. } => *u == user_id,
+                            _ => false,
+                        };
+                    if skip {
+                        continue;
+                    }
+                    let text = serde_json::to_string(&msg).unwrap();
+                    if session.text(text).await.is_err() {
+                        break;
+                    }
+                }
+                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Closed) => break,
             }
         }
     });
@@ -122,30 +187,155 @@ pub async fn ws_overlay_stream(
     let file_name_clone = file_name.clone();
     actix_web::rt::spawn(async move {
         while let Some(Ok(Message::Text(content))) = stream.next().await {
-            // DashMap nesting: each layer can fail independently, can't collapse without skipping broadcast
-            #[allow(clippy::collapsible_if)]
-            if let Ok(change) = serde_json::from_str::<OverlayChangeReq>(&content) {
-                let activity_tx = if let Some(proj) = state_clone.repo_states.get(&project_id) {
+            let Ok(incoming) = serde_json::from_str::<WsBroadcast>(&content) else {
+                continue;
+            };
+            let (broadcast, refresh_activity) =
+                process_incoming(&state_clone, &project_id, &file_name_clone, user_id, incoming);
+            if let Some(broadcast) = broadcast {
+                if let Some(proj) = state_clone.repo_states.get(&project_id) {
                     if let Some(overlay) = proj.overlays.get(&file_name_clone) {
-                        if let Some(mut user_overlay) = overlay.user_contents.get_mut(&user_id) {
-                            user_overlay.content = change.content.clone();
-                            user_overlay.edited_sections =
-                                (change.line_section.0, change.line_section.1);
-                            user_overlay.updated_at = Instant::now();
-                        }
-                        let _ = overlay.tx.send(change);
+                        let _ = overlay.tx.send(broadcast);
                     }
-                    Some(proj.activity_tx.clone())
-                } else {
-                    None
-                };
-                // released the proj guard before recomputing to avoid lock re-entry
+                }
+            }
+            if refresh_activity {
+                let activity_tx = state_clone
+                    .repo_states
+                    .get(&project_id)
+                    .map(|p| p.activity_tx.clone());
                 if let Some(tx) = activity_tx {
                     let _ = tx.send(state_clone.compute_activity(&project_id));
                 }
             }
         }
+        // stream ended. intentionally DON'T remove user_contents here —
+        // the same user_id often has multiple concurrent connections
+        // (web viewer + VSC editor at minimum), and removing on the
+        // first WS close wipes data the user's other sessions are still
+        // actively using. entries get refreshed by the next createOverlay
+        // call, or wiped explicitly via /api/overlay/me (Notbremse).
     });
 
     res
 }
+
+/// Apply an incoming WsBroadcast to overlay state and decide what to do
+/// next. Returns the message to rebroadcast (None for ignored variants and
+/// unauthorized comment deletions) and whether the activity snapshot should
+/// be recomputed.
+fn process_incoming(
+    state: &AppState,
+    project_id: &Uuid,
+    file_name: &str,
+    sender_id: Uuid,
+    msg: WsBroadcast,
+) -> (Option<WsBroadcast>, bool) {
+    match msg {
+        WsBroadcast::Overlay {
+            user_id: _,
+            content,
+            line_section,
+        } => {
+            if let Some(proj) = state.repo_states.get(project_id) {
+                if let Some(overlay) = proj.overlays.get(file_name) {
+                    if let Some(mut user_overlay) = overlay.user_contents.get_mut(&sender_id) {
+                        user_overlay.content = content.clone();
+                        user_overlay.edited_sections = (line_section.0, line_section.1);
+                        user_overlay.updated_at = Instant::now();
+                    }
+                }
+            }
+            (
+                Some(WsBroadcast::Overlay {
+                    user_id: sender_id,
+                    content,
+                    line_section,
+                }),
+                true,
+            )
+        }
+        WsBroadcast::Suggestion {
+            user_id: _,
+            content,
+            line_section,
+        } => (
+            Some(WsBroadcast::Suggestion {
+                user_id: sender_id,
+                content,
+                line_section,
+            }),
+            false,
+        ),
+        WsBroadcast::CommentCreated { line, text, .. } => {
+            if text.trim().is_empty() {
+                return (None, false);
+            }
+            let id = Uuid::new_v4();
+            let created_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let comment = crate::model::overlay::Comment {
+                id,
+                user_id: sender_id,
+                line,
+                text: text.clone(),
+                created_at,
+            };
+            if let Some(proj) = state.repo_states.get(project_id) {
+                if let Some(overlay) = proj.overlays.get(file_name) {
+                    overlay.comments.insert(id, comment);
+                }
+            }
+            (
+                Some(WsBroadcast::CommentCreated {
+                    id,
+                    user_id: sender_id,
+                    line,
+                    text,
+                    created_at,
+                }),
+                false,
+            )
+        }
+        WsBroadcast::CommentDeleted { id } => {
+            // owner-only: only the comment author may delete it.
+            let allowed = state
+                .repo_states
+                .get(project_id)
+                .and_then(|proj| {
+                    proj.overlays
+                        .get(file_name)
+                        .and_then(|ov| ov.comments.get(&id).map(|c| c.user_id == sender_id))
+                })
+                .unwrap_or(false);
+            if !allowed {
+                return (None, false);
+            }
+            if let Some(proj) = state.repo_states.get(project_id) {
+                if let Some(overlay) = proj.overlays.get(file_name) {
+                    overlay.comments.remove(&id);
+                }
+            }
+            (Some(WsBroadcast::CommentDeleted { id }), false)
+        }
+        WsBroadcast::Snapshot { .. } => (None, false),
+        WsBroadcast::SuggestionResponse {
+            suggester_id,
+            accepted,
+            ..
+        } => (
+            Some(WsBroadcast::SuggestionResponse {
+                suggester_id,
+                responder_id: sender_id,
+                accepted,
+            }),
+            false,
+        ),
+        // UserLeft is only emitted server-side from the WS close hook;
+        // ignore if a client tries to forge it inbound.
+        WsBroadcast::UserLeft { .. } => (None, false),
+    }
+}
+
