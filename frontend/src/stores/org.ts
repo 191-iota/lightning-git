@@ -1,7 +1,14 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/services/api";
-import type { CreateOrgReq, CreateOrgRes, MyOrg } from "@/types/api";
+import type {
+  AddOrgMemberReq,
+  CreateOrgReq,
+  CreateOrgRes,
+  MyOrg,
+  OrgMember,
+  UserSearchEntry,
+} from "@/types/api";
 
 export const useOrgStore = defineStore("org", () => {
   const ORG_KEY = "currentOrgId";
@@ -19,6 +26,18 @@ export const useOrgStore = defineStore("org", () => {
     return data.org_id;
   }
 
+  async function rename(orgId: string, name: string): Promise<void> {
+    await api.put(`/api/orgs/${orgId}`, { name });
+    const idx = orgs.value.findIndex((o) => o.id === orgId);
+    if (idx >= 0) orgs.value[idx] = { ...orgs.value[idx], name };
+  }
+
+  async function transferOwnership(orgId: string, newOwnerId: string): Promise<void> {
+    await api.post(`/api/orgs/${orgId}/transfer`, { new_owner_id: newOwnerId });
+    const idx = orgs.value.findIndex((o) => o.id === orgId);
+    if (idx >= 0) orgs.value[idx] = { ...orgs.value[idx], role: "member" };
+  }
+
   function select(id: string) {
     currentOrgId.value = id;
     localStorage.setItem(ORG_KEY, id);
@@ -30,5 +49,47 @@ export const useOrgStore = defineStore("org", () => {
     localStorage.removeItem(ORG_KEY);
   }
 
-  return { orgs, currentOrgId, fetch, create, select, clear };
+  async function listMembers(orgId: string): Promise<OrgMember[]> {
+    const { data } = await api.get<OrgMember[]>(`/api/orgs/${orgId}/members`);
+    return data;
+  }
+
+  async function addMember(orgId: string, req: AddOrgMemberReq): Promise<void> {
+    await api.post(`/api/orgs/${orgId}/members`, req);
+  }
+
+  async function removeMember(orgId: string, userId: string): Promise<void> {
+    await api.delete(`/api/orgs/${orgId}/members/${userId}`);
+  }
+
+  async function findUserByUsername(username: string): Promise<UserSearchEntry | null> {
+    try {
+      const { data } = await api.get<UserSearchEntry[]>(`/api/user/${encodeURIComponent(username)}`);
+      // backend returns an array of up to 5 candidate matches; for an exact
+      // display_name lookup we take the first row.
+      return data[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  function roleIn(orgId: string): "owner" | "member" | null {
+    return orgs.value.find((o) => o.id === orgId)?.role ?? null;
+  }
+
+  return {
+    orgs,
+    currentOrgId,
+    fetch,
+    create,
+    rename,
+    transferOwnership,
+    select,
+    clear,
+    listMembers,
+    addMember,
+    removeMember,
+    findUserByUsername,
+    roleIn,
+  };
 });
