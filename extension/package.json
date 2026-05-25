@@ -82,7 +82,9 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@types/diff": "^7.0.2",
     "axios": "^1.13.2",
+    "diff": "^9.0.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {
