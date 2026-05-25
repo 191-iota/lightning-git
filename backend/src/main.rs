@@ -11,9 +11,6 @@ use uuid::Uuid;
 use self::model::app_state::AppState;
 use self::model::overlay::ProjectLiveState;
 use self::routes::global_routes;
-use crate::handler::comment_handler::__path_create_comment;
-use crate::handler::comment_handler::__path_delete_comment;
-use crate::handler::comment_handler::__path_list_comments;
 use crate::handler::config_handler::__path_health_check;
 use crate::handler::merge_handler::__path_get_merge_conflicts;
 use crate::handler::org_handler::__path_add_org_member;
@@ -62,7 +59,6 @@ use crate::model::org::UpdateOrgReq;
 use crate::model::overlay::ActiveEdit;
 use crate::model::overlay::Comment;
 use crate::model::overlay::Conflict;
-use crate::model::overlay::CreateCommentReq;
 use crate::model::overlay::OverlayViewRes;
 use crate::model::project::AddProjectMemberReq;
 use crate::model::project::CreateProjectReq;
@@ -167,9 +163,6 @@ async fn main() -> std::io::Result<()> {
             remove_org_member,
             transfer_org_ownership,
             list_org_projects,
-            list_comments,
-            create_comment,
-            delete_comment,
         ),
         components(
             schemas(
@@ -204,7 +197,6 @@ async fn main() -> std::io::Result<()> {
                 AddOrgMemberReq,
                 TransferOrgOwnershipReq,
                 Comment,
-                CreateCommentReq,
             ),
         ),
         modifiers(&UuidSchema),
