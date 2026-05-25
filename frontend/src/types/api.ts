@@ -60,6 +60,7 @@ export interface CreateProjectRes {
 }
 
 export type TaskType = "Bug" | "Feature" | "Improvement" | "Unknown";
+export type KanbanColumn = "todo" | "in_progress" | "review" | "merged";
 
 export interface Task {
   id: string;
@@ -67,6 +68,8 @@ export interface Task {
   name: string;
   branch_name: string;
   task_type: TaskType;
+  archived?: boolean;
+  kanban_column?: KanbanColumn;
   created_at?: string;
 }
 
@@ -77,8 +80,64 @@ export interface ActiveEdit {
   edited_sections: [number, number];
 }
 
+export interface ConflictHunk {
+  branch: string;
+  // present for hunks sourced from a live overlay; absent for committed
+  // branch content. lets the UI distinguish "branch X committed" from
+  // "user A typing on branch X right now".
+  user_id?: string | null;
+  base_start: number;
+  base_end: number;
+  content: string[];
+}
+
+export interface MergeConflict {
+  base_start: number;
+  base_end: number;
+  hunks: ConflictHunk[];
+}
+
 export interface ProjectMember {
   id: string;
   display_name: string;
   role: "admin" | "member";
+}
+
+export interface ProjectTree {
+  committed: string[];
+  drafts: string[];
+}
+
+export interface OrgMember {
+  user_id: string;
+  display_name: string;
+  role: "owner" | "member";
+}
+
+export interface AddOrgMemberReq {
+  user_id: string;
+  role: "owner" | "member";
+}
+
+export interface UserSearchEntry {
+  display_name: string;
+  id: string;
+}
+
+export interface AddProjectMemberReq {
+  user_id: string;
+  role: "admin" | "member";
+}
+
+export interface Comment {
+  id: string;
+  user_id: string;
+  line: number;
+  text: string;
+  created_at: number;
+}
+
+export interface CreateCommentReq {
+  line: number;
+  text: string;
 }
