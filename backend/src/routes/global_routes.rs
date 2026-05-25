@@ -3,9 +3,6 @@ use actix_web::body::MessageBody;
 use actix_web::web;
 
 use crate::config::middleware;
-use crate::handler::comment_handler::create_comment;
-use crate::handler::comment_handler::delete_comment;
-use crate::handler::comment_handler::list_comments;
 use crate::handler::config_handler::health_check;
 use crate::model::app_state::AppState;
 use crate::handler::merge_handler::get_merge_conflicts;
@@ -38,6 +35,7 @@ use crate::handler::project_handler::update_project;
 use crate::handler::task_handler::get_project_tasks;
 use crate::handler::task_handler::get_task;
 use crate::handler::task_handler::set_task_archived;
+use crate::handler::task_handler::set_task_column;
 use crate::handler::user_handler::get_user_id_by_username;
 use crate::handler::user_handler::github_auth;
 use crate::handler::user_handler::github_callback;
@@ -60,6 +58,7 @@ pub fn init_api_scope(cfg: &mut web::ServiceConfig) {
             .route("/tasks/project/{proj_id}", web::get().to(get_project_tasks))
             .route("/tasks/{id}/{proj_id}", web::get().to(get_task))
             .route("/tasks/{task_id}/archive", web::patch().to(set_task_archived))
+            .route("/tasks/{task_id}/column", web::patch().to(set_task_column))
             .route("/projects", web::post().to(create_project))
             .route("/projects/{id}", web::put().to(update_project))
             .route("/projects/{id}", web::delete().to(delete_project))
@@ -92,18 +91,6 @@ pub fn init_api_scope(cfg: &mut web::ServiceConfig) {
             .route(
                 "/merge/{project_id}/{file_name:.*}",
                 web::get().to(get_merge_conflicts),
-            )
-            .route(
-                "/comments/{proj_id}/{comment_id}/{file_name:.*}",
-                web::delete().to(delete_comment),
-            )
-            .route(
-                "/comments/{proj_id}/{file_name:.*}",
-                web::get().to(list_comments),
-            )
-            .route(
-                "/comments/{proj_id}/{file_name:.*}",
-                web::post().to(create_comment),
             )
             .route("/user/{username}", web::get().to(get_user_id_by_username))
             .route("/orgs", web::post().to(create_org))
