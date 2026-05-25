@@ -3,8 +3,10 @@ import { ref } from "vue";
 import api from "@/services/api";
 import type {
   ActiveEdit,
+  AddProjectMemberReq,
   CreateProjectReq,
   CreateProjectRes,
+  KanbanColumn,
   Project,
   ProjectMember,
   Task,
@@ -53,6 +55,38 @@ export const useProjectStore = defineStore("project", () => {
     return data.proj_id;
   }
 
+  async function rename(projectId: string, name: string): Promise<void> {
+    await api.put(`/api/projects/${projectId}`, { name });
+    if (current.value?.id === projectId) current.value = { ...current.value, name };
+    const idx = projects.value.findIndex((p) => p.id === projectId);
+    if (idx >= 0) projects.value[idx] = { ...projects.value[idx], name };
+  }
+
+  async function addMember(projectId: string, req: AddProjectMemberReq): Promise<void> {
+    await api.post(`/api/projects/${projectId}/members`, req);
+  }
+
+  async function removeMember(projectId: string, userId: string): Promise<void> {
+    await api.delete(`/api/projects/${projectId}/members/${userId}`);
+  }
+
+  async function setTaskArchived(taskId: string, archived: boolean): Promise<void> {
+    await api.patch(`/api/tasks/${taskId}/archive`, { archived });
+    const t = tasks.value.find((x) => x.id === taskId);
+    if (t) t.archived = archived;
+  }
+
+  async function setTaskColumn(taskId: string, column: KanbanColumn): Promise<void> {
+    await api.patch(`/api/tasks/${taskId}/column`, { kanban_column: column });
+    const t = tasks.value.find((x) => x.id === taskId);
+    if (t) t.kanban_column = column;
+  }
+
+  function myRole(userId: string | undefined): "admin" | "member" | null {
+    if (!userId) return null;
+    return members.value.find((m) => m.id === userId)?.role ?? null;
+  }
+
   function clear() {
     projects.value = [];
     current.value = null;
@@ -72,6 +106,12 @@ export const useProjectStore = defineStore("project", () => {
     fetchMembers,
     memberName,
     create,
+    rename,
+    addMember,
+    removeMember,
+    setTaskArchived,
+    setTaskColumn,
+    myRole,
     clear,
   };
 });
