@@ -23,14 +23,14 @@ fn identical_content_produces_no_hunks() {
             line three
         "}
     .to_string();
-    let branches = vec![("branch-a".to_string(), base.clone())];
+    let branches = vec![("branch-a".to_string(), None, base.clone())];
     let hunks = compute_combined_diff(base, branches);
     assert!(hunks.is_empty());
 }
 
 #[test]
 fn empty_base_and_empty_branch_produces_no_hunks() {
-    let hunks = compute_combined_diff(String::new(), vec![("b".to_string(), String::new())]);
+    let hunks = compute_combined_diff(String::new(), vec![("b".to_string(), None, String::new())]);
     assert!(hunks.is_empty());
 }
 
@@ -38,7 +38,7 @@ fn empty_base_and_empty_branch_produces_no_hunks() {
 fn empty_base_with_branch_content_produces_single_insert_hunk() {
     let hunks = compute_combined_diff(
         String::new(),
-        vec![("b".to_string(), "new line\n".to_string())],
+        vec![("b".to_string(), None, "new line\n".to_string())],
     );
     assert_eq!(hunks.len(), 1);
     assert_eq!(hunks[0].base_start, 0);
@@ -47,16 +47,17 @@ fn empty_base_with_branch_content_produces_single_insert_hunk() {
 }
 
 #[test]
-fn branch_deletes_all_content() {
+fn empty_branch_content_is_skipped() {
+    // a branch whose content is empty/whitespace produces a noisy "removed"
+    // hunk in the UI without representing a meaningful in-flight conflict;
+    // git's own merge tooling surfaces modify/delete cases at merge time.
     let base = indoc! {"
             line one
             line two
         "}
     .to_string();
-    let hunks = compute_combined_diff(base, vec![("b".to_string(), String::new())]);
-    assert_eq!(hunks.len(), 1);
-    assert_eq!(hunks[0].base_start, 0);
-    assert!(hunks[0].content.is_empty());
+    let hunks = compute_combined_diff(base, vec![("b".to_string(), None, String::new())]);
+    assert!(hunks.is_empty());
 }
 
 #[test]
@@ -74,7 +75,7 @@ fn single_line_insertion_in_middle() {
             ccc
         "}
     .to_string();
-    let hunks = compute_combined_diff(base, vec![("b".to_string(), modified)]);
+    let hunks = compute_combined_diff(base, vec![("b".to_string(), None, modified)]);
     assert_eq!(hunks.len(), 1);
     assert_eq!(hunks[0].base_start, 2);
     assert_eq!(hunks[0].content, vec!["inserted"]);
@@ -93,7 +94,7 @@ fn single_line_deletion_in_middle() {
             ccc
         "}
     .to_string();
-    let hunks = compute_combined_diff(base, vec![("b".to_string(), modified)]);
+    let hunks = compute_combined_diff(base, vec![("b".to_string(), None, modified)]);
     assert_eq!(hunks.len(), 1);
     assert_eq!(hunks[0].base_start, 1);
     assert_eq!(hunks[0].base_end, 2);
@@ -114,7 +115,7 @@ fn modification_replaces_line() {
             ccc
         "}
     .to_string();
-    let hunks = compute_combined_diff(base, vec![("b".to_string(), modified)]);
+    let hunks = compute_combined_diff(base, vec![("b".to_string(), None, modified)]);
     assert_eq!(hunks.len(), 1);
     assert_eq!(hunks[0].content, vec!["BBB"]);
 }
@@ -132,7 +133,7 @@ fn hunk_at_end_of_file_no_trailing_equal() {
             new tail
         "}
     .to_string();
-    let hunks = compute_combined_diff(base, vec![("b".to_string(), modified)]);
+    let hunks = compute_combined_diff(base, vec![("b".to_string(), None, modified)]);
     assert_eq!(hunks.len(), 1);
     assert_eq!(hunks[0].content, vec!["new tail"]);
 }
@@ -150,7 +151,7 @@ fn hunk_at_start_of_file() {
             bbb
         "}
     .to_string();
-    let hunks = compute_combined_diff(base, vec![("b".to_string(), modified)]);
+    let hunks = compute_combined_diff(base, vec![("b".to_string(), None, modified)]);
     assert_eq!(hunks.len(), 1);
     assert_eq!(hunks[0].base_start, 0);
     assert_eq!(hunks[0].content, vec!["new head"]);
@@ -174,7 +175,7 @@ fn two_separate_hunks_from_one_branch() {
             EEE
         "}
     .to_string();
-    let hunks = compute_combined_diff(base, vec![("b".to_string(), modified)]);
+    let hunks = compute_combined_diff(base, vec![("b".to_string(), None, modified)]);
     assert_eq!(hunks.len(), 2);
     assert_eq!(hunks[0].content, vec!["AAA"]);
     assert_eq!(hunks[1].content, vec!["EEE"]);
@@ -200,7 +201,7 @@ fn multiple_branches_produce_separate_hunks() {
             CCC
         "}
     .to_string();
-    let branches = vec![("b1".to_string(), b1), ("b2".to_string(), b2)];
+    let branches = vec![("b1".to_string(), None, b1), ("b2".to_string(), None, b2)];
     let hunks = compute_combined_diff(base, branches);
     assert_eq!(hunks.len(), 2);
     assert!(hunks.iter().any(|h| h.branch == "b1"));
@@ -211,7 +212,7 @@ fn multiple_branches_produce_separate_hunks() {
 fn whitespace_only_difference_after_trim() {
     let base = "aaa\nbbb  \nccc\n".to_string();
     let modified = "aaa\nbbb\nccc\n".to_string();
-    let hunks = compute_combined_diff(base, vec![("b".to_string(), modified)]);
+    let hunks = compute_combined_diff(base, vec![("b".to_string(), None, modified)]);
     // After trim_end, "bbb  " and "bbb" may still differ because base isn't trimmed.
     // This test documents actual behavior. If base normalization is added later, update.
     let _ = hunks;
