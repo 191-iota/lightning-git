@@ -21,24 +21,18 @@ pub struct Overlay {
     pub original_content: String,
     // Key: User id; Value: their content
     pub user_contents: DashMap<Uuid, UserOverlay>,
-    pub tx: broadcast::Sender<OverlayChangeReq>,
+    pub tx: broadcast::Sender<WsBroadcast>,
     // In-memory line comments. Lost on restart.
     pub comments: DashMap<Uuid, Comment>,
 }
 
-#[derive(Serialize, Deserialize, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
 pub struct Comment {
     pub id: Uuid,
     pub user_id: Uuid,
     pub line: u32,
     pub text: String,
     pub created_at: i64,
-}
-
-#[derive(Deserialize, ToSchema)]
-pub struct CreateCommentReq {
-    pub line: u32,
-    pub text: String,
 }
 
 #[derive(Clone)]
@@ -56,7 +50,7 @@ pub struct OverlayViewRes {
     pub all_user_contents: Vec<UserOverlayRes>,
 }
 
-#[derive(Serialize, Deserialize, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
 pub struct UserOverlayRes {
     pub user_id: Uuid,
     pub content: String,
@@ -65,17 +59,70 @@ pub struct UserOverlayRes {
     pub updated_at_nanos: u32,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
-pub struct OverlayChangeReq {
-    pub user_id: Uuid,
-    pub content: String,
-    pub line_section: (u32, u32),
+/// Tagged enum carried on the per-file overlay broadcast channel and over
+/// the WebSocket wire. Clients dispatch on "kind" to react to typing,
+/// resolution suggestions, and comment lifecycle events. Persisting
+/// comments through this channel rather than a separate REST + polling
+/// loop is the whole point of the refactor.
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WsBroadcast {
+    /// A user's live typing update for this file.
+    Overlay {
+        user_id: Uuid,
+        content: String,
+        line_section: (u32, u32),
+    },
+    /// A user is proposing this content as a conflict resolution.
+    /// Broadcast-only; never mutates any overlay state.
+    Suggestion {
+        user_id: Uuid,
+        content: String,
+        line_section: (u32, u32),
+    },
+    /// A comment was created. id is server-generated; clients sending this
+    /// variant fill it with Uuid::nil(), the WS handler replaces it.
+    CommentCreated {
+        #[serde(default)]
+        id: Uuid,
+        user_id: Uuid,
+        line: u32,
+        text: String,
+        #[serde(default)]
+        created_at: i64,
+    },
+    /// A comment was removed.
+    CommentDeleted { id: Uuid },
+    /// Initial snapshot pushed by the server right after a WS subscription
+    /// opens, so clients dont need a separate HTTP call to seed comments
+    /// and active users. only sent server -> client.
+    Snapshot {
+        comments: Vec<Comment>,
+        all_user_contents: Vec<UserOverlayRes>,
+    },
+    /// Reply to a Suggestion. The responder accepted or declined; the
+    /// suggester reads this off the broadcast to know the outcome.
+    /// Broadcast-only on the server side, no state mutation.
+    SuggestionResponse {
+        suggester_id: Uuid,
+        responder_id: Uuid,
+        accepted: bool,
+    },
+    /// A user's session closed (WS disconnect or session stop). The server
+    /// removes their entry from user_contents before broadcasting this so
+    /// remaining subscribers can drop them from the active-editors view and
+    /// stop synthesizing live conflicts against their stale content.
+    UserLeft { user_id: Uuid },
 }
 
 // A hunk is a contiguous region of changed lines in a diff. Git uses the same term.
+// user_id is Some for hunks sourced from a live overlay (so the UI can name
+// the editing user), None for hunks read from a branch's committed content.
 #[derive(Debug, ToSchema, Serialize, Clone)]
 pub struct Hunk {
     pub branch: String,
+    #[schema(value_type = Option<String>)]
+    pub user_id: Option<Uuid>,
     pub base_start: usize,
     pub base_end: usize,
     pub content: Vec<String>,

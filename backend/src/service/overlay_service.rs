@@ -41,21 +41,31 @@ pub async fn build_overlay_response(overlay: &Overlay, user_id: Uuid) -> Overlay
 
 /// Collect the live content of one file grouped by branch.
 /// Used by the merge service to diff each branch's tip against main.
+/// Each entry carries the user_id so downstream code can attribute the hunk
+/// to its editor instead of just labeling it by branch.
 pub fn extract_overlay_file_contents(
     file_name: String,
     project_id: Uuid,
     state: web::Data<AppState>,
-    // Vec<(Branchname, Contents)>
-) -> Result<Vec<(String, String)>, OverlayError> {
-    let mut result: Vec<(String, String)> = Vec::new();
+) -> Result<Vec<OverlaySource>, OverlayError> {
+    let mut result: Vec<OverlaySource> = Vec::new();
     let file_overlays = state.get_file_overlay(project_id, file_name)?;
     file_overlays.user_contents.iter().for_each(|v| {
         let user_overlay = v.value();
-
-        result.push((user_overlay.branch.clone(), user_overlay.content.clone()));
+        result.push(OverlaySource {
+            branch: user_overlay.branch.clone(),
+            user_id: *v.key(),
+            content: user_overlay.content.clone(),
+        });
     });
 
     Ok(result)
+}
+
+pub struct OverlaySource {
+    pub branch: String,
+    pub user_id: Uuid,
+    pub content: String,
 }
 
 // TODO: create functionality for automatic overlay pruning

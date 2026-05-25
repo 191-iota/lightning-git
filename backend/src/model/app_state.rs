@@ -13,7 +13,7 @@ use crate::error::custom_errors::OverlayError;
 
 use super::overlay::ActiveEdit;
 use super::overlay::Overlay;
-use super::overlay::OverlayChangeReq;
+use super::overlay::WsBroadcast;
 use super::overlay::ProjectLiveState;
 use super::overlay::UserOverlay;
 
@@ -40,7 +40,7 @@ impl AppState {
         user_id: Uuid,
         initial_content: String,
         branch: String,
-    ) -> broadcast::Sender<OverlayChangeReq> {
+    ) -> broadcast::Sender<WsBroadcast> {
         let project_state = self.repo_states.entry(project_id).or_insert_with(|| {
             let (activity_tx, _) = broadcast::channel(128);
             ProjectLiveState {
@@ -106,6 +106,37 @@ impl AppState {
             ))
     }
 
+    /// Ensure the per-file Overlay exists so a passive subscriber (e.g. the
+    /// web frontend in viewer mode) can attach the per-file WS even when no
+    /// user has PUT yet. Does NOT insert a UserOverlay, so the user does not
+    /// appear in the activity feed as "editing".
+    pub fn ensure_file_overlay(
+        &self,
+        project_id: Uuid,
+        file_name: &str,
+    ) -> broadcast::Sender<WsBroadcast> {
+        let project_state = self.repo_states.entry(project_id).or_insert_with(|| {
+            let (activity_tx, _) = broadcast::channel(128);
+            ProjectLiveState {
+                overlays: DashMap::new(),
+                activity_tx,
+            }
+        });
+        let overlay = project_state
+            .overlays
+            .entry(file_name.to_string())
+            .or_insert_with(|| {
+                let (tx, _rx) = broadcast::channel(128);
+                Overlay {
+                    original_content: String::new(),
+                    user_contents: DashMap::new(),
+                    tx,
+                    comments: DashMap::new(),
+                }
+            });
+        overlay.tx.clone()
+    }
+
     // Used by the project activity WS so subscribers can connect even before
     // any file overlay exists yet.
     pub fn ensure_project_state(&self, project_id: Uuid) -> broadcast::Sender<Vec<ActiveEdit>> {
@@ -152,7 +183,7 @@ impl AppState {
             }
             if touched {
                 reset_count += 1;
-                let _ = tx.send(OverlayChangeReq {
+                let _ = tx.send(WsBroadcast::Overlay {
                     user_id: *user_id,
                     content: base,
                     line_section: (0, 0),
