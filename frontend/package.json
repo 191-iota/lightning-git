@@ -11,7 +11,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@types/diff": "^7.0.2",
     "axios": "^1.16.1",
+    "diff": "^9.0.0",
     "pinia": "^3.0.4",
     "vue": "^3.5.34",
     "vue-router": "^5.0.7",
