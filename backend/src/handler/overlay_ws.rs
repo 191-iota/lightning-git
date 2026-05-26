@@ -159,13 +159,12 @@ pub async fn ws_overlay_stream(
         loop {
             match rx.recv().await {
                 Ok(msg) => {
-                    // self-filter overlay / suggestion echoes only; comment
-                    // events must reach the originating client too so it
-                    // learns the server-assigned id and timestamp.
+                    // self-filter overlay echoes only; comment events must
+                    // reach the originating client too so it learns the
+                    // server-assigned id and timestamp.
                     let skip = !echo_self
                         && match &msg {
-                            WsBroadcast::Overlay { user_id: u, .. }
-                            | WsBroadcast::Suggestion { user_id: u, .. } => *u == user_id,
+                            WsBroadcast::Overlay { user_id: u, .. } => *u == user_id,
                             _ => false,
                         };
                     if skip {
@@ -255,18 +254,6 @@ fn process_incoming(
                 true,
             )
         }
-        WsBroadcast::Suggestion {
-            user_id: _,
-            content,
-            line_section,
-        } => (
-            Some(WsBroadcast::Suggestion {
-                user_id: sender_id,
-                content,
-                line_section,
-            }),
-            false,
-        ),
         WsBroadcast::CommentCreated { line, text, .. } => {
             if text.trim().is_empty() {
                 return (None, false);
@@ -321,21 +308,6 @@ fn process_incoming(
             (Some(WsBroadcast::CommentDeleted { id }), false)
         }
         WsBroadcast::Snapshot { .. } => (None, false),
-        WsBroadcast::SuggestionResponse {
-            suggester_id,
-            accepted,
-            ..
-        } => (
-            Some(WsBroadcast::SuggestionResponse {
-                suggester_id,
-                responder_id: sender_id,
-                accepted,
-            }),
-            false,
-        ),
-        // UserLeft is only emitted server-side from the WS close hook;
-        // ignore if a client tries to forge it inbound.
-        WsBroadcast::UserLeft { .. } => (None, false),
     }
 }
 
