@@ -205,17 +205,17 @@ function branchOf(userId: string): string {
 // + emerald all looked too similar at small sizes, so the palette spreads
 // across yellow / green / cyan / magenta / violet hues that are easy to tell
 // apart even on a single line.
-const textColors = ["text-amber-400", "text-emerald-400", "text-sky-400", "text-rose-400", "text-violet-400"];
-const bgColors = ["bg-amber-400", "bg-emerald-400", "bg-sky-400", "bg-rose-400", "bg-violet-400"];
+const textColors = ["text-amber-700", "text-emerald-700", "text-sky-700", "text-rose-700", "text-violet-700"];
+const bgColors = ["bg-amber-500", "bg-emerald-500", "bg-sky-500", "bg-rose-500", "bg-violet-500"];
 // full badge class strings (bg + text + border) per color slot. tailwind has
 // to see the literal classes to include them in the build, so they live
 // as static array entries rather than being templated together at runtime.
 const badgeClasses = [
-  "bg-amber-500/25 text-amber-200 border border-amber-500/50",
-  "bg-emerald-500/25 text-emerald-200 border border-emerald-500/50",
-  "bg-sky-500/25 text-sky-200 border border-sky-500/50",
-  "bg-rose-500/25 text-rose-200 border border-rose-500/50",
-  "bg-violet-500/25 text-violet-200 border border-violet-500/50",
+  "bg-amber-50 text-amber-800 border border-amber-200",
+  "bg-emerald-50 text-emerald-800 border border-emerald-200",
+  "bg-sky-50 text-sky-800 border border-sky-200",
+  "bg-rose-50 text-rose-800 border border-rose-200",
+  "bg-violet-50 text-violet-800 border border-violet-200",
 ];
 // position-based color assignment over a stable sort of every known user id
 // in this session. five users always get five distinct colors; the hash-mod
@@ -267,7 +267,7 @@ const isTruncated = computed(() => projectedLines.value.length > MAX_RENDERED_LI
 
 function lineClass(line: ProjLine): string {
   if (line.userId) return colorFor(line.userId);
-  return "text-zinc-300";
+  return "text-lg-text-sec";
 }
 
 let ws: OverlayWebSocket | null = null;

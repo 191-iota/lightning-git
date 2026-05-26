@@ -98,13 +98,9 @@ const faqs = [
 
     <section class="lg-container pt-24 pb-12 text-center">
       <div
-        class="inline-flex items-center justify-center w-20 h-20 rounded-3xl mb-8"
-        :style="{
-          background: 'rgba(139,92,246,0.1)',
-          border: '1px solid rgba(139,92,246,0.3)',
-        }"
+        class="inline-flex items-center justify-center w-20 h-20 rounded-3xl mb-8 bg-lg-surface border border-lg-border"
       >
-        <BoltIcon class="text-lg-accent-bright" :size="40" />
+        <BoltIcon class="text-lg-text-sec" :size="40" />
       </div>
       <h1 class="text-5xl md:text-6xl font-semibold leading-tight">
         Pricing
@@ -119,10 +115,10 @@ const faqs = [
         v-for="plan in plans"
         :key="plan.name"
         :class="[
-          'rounded-xl border p-6 flex flex-col transition-all duration-300',
+          'rounded-lg border p-6 flex flex-col transition-all duration-300',
           plan.highlight
-            ? 'border-lg-accent bg-lg-surface shadow-[0_4px_30px_rgba(139,92,246,0.12)]'
-            : 'border-lg-border bg-lg-surface hover:shadow-[0_4px_20px_rgba(0,0,0,0.4)]',
+            ? 'border-lg-ink bg-lg-bg shadow-[0_4px_24px_rgba(0,0,0,0.08)]'
+            : 'border-lg-border bg-lg-bg hover:shadow-[0_2px_12px_rgba(0,0,0,0.04)]',
         ]"
       >
         <header class="mb-5">
