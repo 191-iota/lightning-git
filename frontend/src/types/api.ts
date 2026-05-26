@@ -136,8 +136,3 @@ export interface Comment {
   text: string;
   created_at: number;
 }
-
-export interface CreateCommentReq {
-  line: number;
-  text: string;
-}

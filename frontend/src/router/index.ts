@@ -7,7 +7,13 @@ const router = createRouter({
   routes: [
     {
       path: "/",
-      redirect: "/dashboard",
+      name: "landing",
+      component: () => import("@/views/LandingView.vue"),
+    },
+    {
+      path: "/pricing",
+      name: "pricing",
+      component: () => import("@/views/PricingView.vue"),
     },
     {
       path: "/login",
@@ -34,6 +40,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: "/orgs/:id/members",
+      name: "org-members",
+      component: () => import("@/views/OrgMembersView.vue"),
+      meta: { requiresAuth: true },
+    },
+    {
       path: "/dashboard",
       name: "dashboard",
       component: () => import("@/views/DashboardView.vue"),
@@ -55,6 +67,12 @@ const router = createRouter({
       path: "/projects/:id/overlay",
       name: "overlay",
       component: () => import("@/views/OverlayView.vue"),
+      meta: { requiresAuth: true, requiresOrg: true },
+    },
+    {
+      path: "/projects/:id/members",
+      name: "project-members",
+      component: () => import("@/views/ProjectMembersView.vue"),
       meta: { requiresAuth: true, requiresOrg: true },
     },
   ],
