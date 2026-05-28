@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink } from "vue-router";
-import BoltIcon from "@/components/BoltIcon.vue";
+import GitIcon from "@/components/GitIcon.vue";
 
 withDefaults(
   defineProps<{
@@ -21,7 +21,7 @@ withDefaults(
         :to="brandTo"
         class="flex items-center gap-2 font-medium text-[1rem] text-lg-text"
       >
-        <BoltIcon class="text-lg-text-sec" :size="18" />
+        <GitIcon class="text-lg-text-sec" :size="18" />
         <span>lightning-git</span>
       </RouterLink>
       <div class="flex items-center gap-5 text-sm">
