@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
-import BoltIcon from "@/components/BoltIcon.vue";
+import GitIcon from "@/components/GitIcon.vue";
 import NavBar from "@/components/NavBar.vue";
 
 const auth = useAuthStore();
@@ -100,7 +100,7 @@ const faqs = [
       <div
         class="inline-flex items-center justify-center w-20 h-20 rounded-3xl mb-8 bg-lg-surface border border-lg-border"
       >
-        <BoltIcon class="text-lg-text-sec" :size="40" />
+        <GitIcon class="text-lg-text-sec" :size="40" />
       </div>
       <h1 class="text-5xl md:text-6xl font-semibold leading-tight">
         Pricing

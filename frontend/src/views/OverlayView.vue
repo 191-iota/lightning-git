@@ -619,13 +619,13 @@ onUnmounted(() => {
 
 <template>
   <div class="min-h-screen bg-lg-bg text-lg-text">
-    <NavBar :wide="true">
+    <NavBar>
       <RouterLink to="/orgs" class="lg-link">Switch org</RouterLink>
       <span class="text-lg-text-muted hidden sm:inline">{{ auth.user?.email }}</span>
       <button class="lg-link" @click="onLogout">Sign out</button>
     </NavBar>
 
-    <main class="lg-container-wide py-10">
+    <main class="lg-container py-10">
       <RouterLink to="/dashboard" class="lg-breadcrumb mb-3">
         &larr; {{ parentOrg?.name ? `${parentOrg.name} / Projects` : "Projects" }}
       </RouterLink>
