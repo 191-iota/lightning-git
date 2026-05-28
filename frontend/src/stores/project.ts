@@ -62,6 +62,18 @@ export const useProjectStore = defineStore("project", () => {
     if (idx >= 0) projects.value[idx] = { ...projects.value[idx], name };
   }
 
+  async function remove(projectId: string): Promise<void> {
+    await api.delete(`/api/projects/${projectId}`);
+    projects.value = projects.value.filter((p) => p.id !== projectId);
+    if (current.value?.id === projectId) current.value = null;
+  }
+
+  // Notbremse: wipes the calling user's overlays in this project back to the
+  // committed git base. Server-side endpoint is gated by project membership.
+  async function wipeMyOverlays(projectId: string): Promise<void> {
+    await api.delete(`/api/overlay/me/${projectId}`);
+  }
+
   async function addMember(projectId: string, req: AddProjectMemberReq): Promise<void> {
     await api.post(`/api/projects/${projectId}/members`, req);
   }
@@ -107,6 +119,8 @@ export const useProjectStore = defineStore("project", () => {
     memberName,
     create,
     rename,
+    remove,
+    wipeMyOverlays,
     addMember,
     removeMember,
     setTaskArchived,
