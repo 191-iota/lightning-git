@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
 import ToastHost from '@/components/ToastHost.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 </script>
 
 <template>
@@ -10,4 +11,5 @@ import ToastHost from '@/components/ToastHost.vue'
        refs from the previous route. -->
   <RouterView :key="$route.fullPath" />
   <ToastHost />
+  <ConfirmDialog />
 </template>

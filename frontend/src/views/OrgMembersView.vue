@@ -9,6 +9,7 @@ import { useProjectStore } from "@/stores/project";
 import type { OrgMember } from "@/types/api";
 import NavBar from "@/components/NavBar.vue";
 import TabStrip, { type Tab } from "@/components/TabStrip.vue";
+import { confirmDialog } from "@/utils/confirm";
 
 const router = useRouter();
 const projectStore = useProjectStore();
@@ -83,9 +84,12 @@ async function commitName() {
 }
 
 async function promote(member: OrgMember) {
-  if (!confirm(
-    `Transfer ownership of ${orgName.value} to ${member.display_name}? You will be demoted to member.`,
-  )) return;
+  const ok = await confirmDialog({
+    title: "Transfer ownership?",
+    message: `${member.display_name} will become the new owner of ${orgName.value}. You will be demoted to member.`,
+    confirmLabel: "Transfer",
+  });
+  if (!ok) return;
   try {
     await orgStore.transferOwnership(orgId.value, member.user_id);
     toast.success(`${member.display_name} is now the owner.`);
@@ -165,13 +169,43 @@ function addMemberErrorMessage(error: unknown): string {
 
 async function remove(member: OrgMember) {
   if (member.user_id === auth.user?.id) return;
-  if (!confirm(`Remove ${member.display_name} from ${orgName.value}?`)) return;
+  const ok = await confirmDialog({
+    title: "Remove member?",
+    message: `${member.display_name} will lose access to ${orgName.value} and every project under it.`,
+    confirmLabel: "Remove",
+    danger: true,
+  });
+  if (!ok) return;
   try {
     await orgStore.removeMember(orgId.value, member.user_id);
     toast.success(`Removed ${member.display_name}.`);
     await refresh();
   } catch {
     toast.error("Failed to remove member.");
+  }
+}
+
+// destructive op: drops the org row, every project under it, and every
+// membership. Backend gates with require_org_owner.
+const deleting = ref(false);
+async function deleteOrg() {
+  if (!isOwner.value) return;
+  const ok = await confirmDialog({
+    title: `Delete ${orgName.value}?`,
+    message: "Every project, membership, task, and overlay state under this organization is removed. There is no undo.",
+    confirmLabel: "Delete org",
+    danger: true,
+  });
+  if (!ok) return;
+  deleting.value = true;
+  try {
+    await orgStore.remove(orgId.value);
+    toast.success(`${orgName.value} deleted.`);
+    await router.push({ name: "orgs" });
+  } catch {
+    toast.error("Failed to delete org.");
+  } finally {
+    deleting.value = false;
   }
 }
 </script>
@@ -292,6 +326,26 @@ async function remove(member: OrgMember) {
         </ul>
 
         <div v-else class="lg-card p-6 text-sm text-lg-text-sec">No members yet.</div>
+      </section>
+
+      <section v-if="isOwner" class="mt-12 border-t border-lg-border pt-6">
+        <h2 class="text-sm font-mono uppercase tracking-wider text-lg-rose mb-2">Danger zone</h2>
+        <div class="lg-card p-4 flex items-center justify-between gap-4 border-lg-rose/40">
+          <div>
+            <p class="text-sm font-medium">Delete this organization</p>
+            <p class="text-xs text-lg-text-sec mt-1">
+              Removes the org and all of its projects, memberships, tasks, and live overlay state.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="lg-btn-secondary text-xs px-3 py-2 border-lg-rose/60 text-lg-rose hover:bg-lg-rose/10 hover:border-lg-rose disabled:opacity-50"
+            :disabled="deleting"
+            @click="deleteOrg"
+          >
+            {{ deleting ? "Deleting..." : "Delete org" }}
+          </button>
+        </div>
       </section>
     </main>
   </div>

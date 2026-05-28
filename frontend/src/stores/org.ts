@@ -38,6 +38,15 @@ export const useOrgStore = defineStore("org", () => {
     if (idx >= 0) orgs.value[idx] = { ...orgs.value[idx], role: "member" };
   }
 
+  async function remove(orgId: string): Promise<void> {
+    await api.delete(`/api/orgs/${orgId}`);
+    orgs.value = orgs.value.filter((o) => o.id !== orgId);
+    if (currentOrgId.value === orgId) {
+      currentOrgId.value = null;
+      localStorage.removeItem(ORG_KEY);
+    }
+  }
+
   function select(id: string) {
     currentOrgId.value = id;
     localStorage.setItem(ORG_KEY, id);
@@ -84,6 +93,7 @@ export const useOrgStore = defineStore("org", () => {
     create,
     rename,
     transferOwnership,
+    remove,
     select,
     clear,
     listMembers,

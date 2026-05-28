@@ -16,6 +16,7 @@ import TabStrip, { type Tab } from "@/components/TabStrip.vue";
 import { useToastStore } from "@/stores/toast";
 import { useOrgStore } from "@/stores/org";
 import { useRouter } from "vue-router";
+import { confirmDialog } from "@/utils/confirm";
 
 const orgStore = useOrgStore();
 const toast = useToastStore();
@@ -27,6 +28,32 @@ async function onLogout() {
   orgStore.clear();
   projectStore.clear();
   await router.push({ name: "login" });
+}
+
+// Notbremse: drops all of the caller's overlays in this project back to the
+// committed git base. Server gates on project membership. The WS server side
+// will broadcast the resulting state changes; if the WS is paused or closed
+// we still trigger a local recompute so the UI doesnt wait for the next
+// keystroke.
+const wiping = ref(false);
+async function notbremse() {
+  if (wiping.value) return;
+  const ok = await confirmDialog({
+    title: "Notbremse",
+    message: "Reset all your overlays in this project to the committed git base. Other teammates' overlays are not affected.",
+    confirmLabel: "Reset overlays",
+    danger: true,
+  });
+  if (!ok) return;
+  wiping.value = true;
+  try {
+    await projectStore.wipeMyOverlays(projectId.value);
+    toast.success("Notbremse fired: your overlays were reset to the committed base.");
+  } catch {
+    toast.error("Notbremse failed.");
+  } finally {
+    wiping.value = false;
+  }
 }
 
 const projectTabs = computed<Tab[]>(() => [
@@ -630,7 +657,7 @@ onUnmounted(() => {
         &larr; {{ parentOrg?.name ? `${parentOrg.name} / Projects` : "Projects" }}
       </RouterLink>
 
-      <header class="mt-3 mb-6 min-h-[6rem] flex items-center">
+      <header class="mt-3 mb-6 min-h-[6rem] flex items-center justify-between gap-4">
         <div class="flex flex-col gap-2 items-start">
           <span class="lg-scope lg-scope-project">Project</span>
           <h1 class="text-3xl font-bold">{{ projectName }}</h1>
@@ -638,6 +665,15 @@ onUnmounted(() => {
             {{ branch ? `${branch}${currentFile ? `:${currentFile}` : ""}` : " " }}
           </p>
         </div>
+        <button
+          type="button"
+          class="lg-btn-secondary text-xs px-3 py-2 border-lg-rose/50 text-lg-rose hover:bg-lg-rose/10 hover:border-lg-rose disabled:opacity-50"
+          :disabled="wiping"
+          @click="notbremse"
+          title="Reset all your overlays in this project to the committed git base"
+        >
+          {{ wiping ? "Resetting..." : "Notbremse" }}
+        </button>
       </header>
 
       <TabStrip :tabs="projectTabs" class="mb-6" />

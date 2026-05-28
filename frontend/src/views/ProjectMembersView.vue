@@ -9,6 +9,7 @@ import { useToastStore } from "@/stores/toast";
 import type { OrgMember, ProjectMember } from "@/types/api";
 import NavBar from "@/components/NavBar.vue";
 import TabStrip, { type Tab } from "@/components/TabStrip.vue";
+import { confirmDialog } from "@/utils/confirm";
 
 const router = useRouter();
 
@@ -156,13 +157,43 @@ function addMemberErrorMessage(error: unknown): string {
 }
 
 async function remove(member: ProjectMember) {
-  if (!confirm(`Remove ${member.display_name} from ${projectName.value}?`)) return;
+  const ok = await confirmDialog({
+    title: "Remove member?",
+    message: `${member.display_name} will lose access to ${projectName.value}.`,
+    confirmLabel: "Remove",
+    danger: true,
+  });
+  if (!ok) return;
   try {
     await projectStore.removeMember(projectId.value, member.id);
     toast.success(`Removed ${member.display_name}.`);
     await refresh();
   } catch {
     toast.error("Failed to remove member.");
+  }
+}
+
+// destructive op: drops the project row, every membership, the local git
+// mirror, and every overlay. Backend gates with require_project_admin.
+const deleting = ref(false);
+async function deleteProject() {
+  if (!isAdmin.value) return;
+  const ok = await confirmDialog({
+    title: `Delete ${projectName.value}?`,
+    message: "The local git mirror, every task, every membership, and every active overlay are removed. There is no undo.",
+    confirmLabel: "Delete project",
+    danger: true,
+  });
+  if (!ok) return;
+  deleting.value = true;
+  try {
+    await projectStore.remove(projectId.value);
+    toast.success(`${projectName.value} deleted.`);
+    await router.push({ name: "dashboard" });
+  } catch {
+    toast.error("Failed to delete project.");
+  } finally {
+    deleting.value = false;
   }
 }
 </script>
@@ -303,6 +334,26 @@ async function remove(member: ProjectMember) {
         </ul>
 
         <div v-else class="lg-card p-6 text-sm text-lg-text-sec">No members yet.</div>
+      </section>
+
+      <section v-if="isAdmin" class="mt-12 border-t border-lg-border pt-6">
+        <h2 class="text-sm font-mono uppercase tracking-wider text-lg-rose mb-2">Danger zone</h2>
+        <div class="lg-card p-4 flex items-center justify-between gap-4 border-lg-rose/40">
+          <div>
+            <p class="text-sm font-medium">Delete this project</p>
+            <p class="text-xs text-lg-text-sec mt-1">
+              Removes the project record, all memberships, tasks, the local git mirror, and any active overlay state.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="lg-btn-secondary text-xs px-3 py-2 border-lg-rose/60 text-lg-rose hover:bg-lg-rose/10 hover:border-lg-rose disabled:opacity-50"
+            :disabled="deleting"
+            @click="deleteProject"
+          >
+            {{ deleting ? "Deleting..." : "Delete project" }}
+          </button>
+        </div>
       </section>
     </main>
   </div>
