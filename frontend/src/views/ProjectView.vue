@@ -249,7 +249,7 @@ onMounted(async () => {
 
 <template>
   <div class="min-h-screen bg-lg-bg text-lg-text">
-    <NavBar :wide="true">
+    <NavBar>
       <span class="flex items-center gap-1.5 text-lg-text-muted">
         <span
           class="inline-block w-1.5 h-1.5 rounded-full"
@@ -266,7 +266,7 @@ onMounted(async () => {
       <button class="lg-link" @click="onLogout">Sign out</button>
     </NavBar>
 
-    <main class="lg-container-wide py-10">
+    <main class="lg-container py-10">
       <RouterLink to="/dashboard" class="lg-breadcrumb mb-3">
         &larr; {{ parentOrg?.name ? `${parentOrg.name} / Projects` : "Projects" }}
       </RouterLink>
