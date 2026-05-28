@@ -4,6 +4,10 @@ import ToastHost from '@/components/ToastHost.vue'
 </script>
 
 <template>
-  <RouterView />
+  <!-- key on fullPath forces a fresh component instance on every route change,
+       so query-only navigation (?branch=, ?file=) and browser back/forward
+       re-run onMounted and re-bind the per-file WS instead of reusing stale
+       refs from the previous route. -->
+  <RouterView :key="$route.fullPath" />
   <ToastHost />
 </template>
