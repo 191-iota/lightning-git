@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter, RouterLink } from "vue-router";
 import axios from "axios";
 import { useOrgStore } from "@/stores/org";
@@ -9,7 +9,7 @@ import { useProjectStore } from "@/stores/project";
 import type { OrgMember } from "@/types/api";
 import NavBar from "@/components/NavBar.vue";
 import TabStrip, { type Tab } from "@/components/TabStrip.vue";
-import { confirmDialog } from "@/utils/confirm";
+import { confirmDialog, promptDialog } from "@/utils/confirm";
 
 const router = useRouter();
 const projectStore = useProjectStore();
@@ -47,40 +47,37 @@ const orgName = computed(
   () => orgStore.orgs.find((o) => o.id === orgId.value)?.name ?? "",
 );
 
-const editing = ref(false);
-const draftName = ref("");
 const renaming = ref(false);
-const nameInput = ref<HTMLInputElement | null>(null);
 
-async function startEditName() {
-  draftName.value = orgName.value;
-  editing.value = true;
-  await nextTick();
-  nameInput.value?.focus();
-  nameInput.value?.select();
-}
-
-function cancelEditName() {
-  editing.value = false;
-}
-
-async function commitName() {
-  if (!editing.value) return;
-  const next = draftName.value.trim();
-  if (!next || next === orgName.value) {
-    editing.value = false;
-    return;
-  }
+async function renameOrg() {
+  if (renaming.value) return;
+  const next = await promptDialog({
+    title: "Rename organization",
+    label: "Organization name",
+    defaultValue: orgName.value,
+    minLength: 2,
+    maxLength: 64,
+    confirmLabel: "Rename",
+  });
+  if (next === null || next === orgName.value) return;
   renaming.value = true;
   try {
     await orgStore.rename(orgId.value, next);
     toast.success("Org renamed.");
-    editing.value = false;
-  } catch {
-    toast.error("Failed to rename org.");
+  } catch (error) {
+    toast.error(renameErrorMessage(error));
   } finally {
     renaming.value = false;
   }
+}
+
+function renameErrorMessage(error: unknown): string {
+  if (!axios.isAxiosError(error)) return "Failed to rename org.";
+  const status = error.response?.status;
+  if (status === 401) return "Failed to rename org. You must be the owner.";
+  if (status === 400) return "Name is not valid. Use 2 to 64 characters.";
+  if (status && status >= 500) return "Server error renaming org.";
+  return "Failed to rename org.";
 }
 
 async function promote(member: OrgMember) {
@@ -223,28 +220,18 @@ async function deleteOrg() {
       <header class="mb-6 flex items-end justify-between gap-4">
         <div class="flex flex-col gap-2 items-start">
           <span class="lg-scope lg-scope-org">Organization</span>
-          <div v-if="editing" class="flex items-center gap-2">
-            <input
-              ref="nameInput"
-              v-model="draftName"
-              minlength="2"
-              maxlength="64"
-              class="text-3xl font-bold bg-transparent border-0 border-b-2 border-lg-accent-bright/70 focus:border-lg-accent-bright focus:outline-none px-0 py-0 -mb-[2px] min-w-[10rem]"
-              @keydown.enter="commitName"
-              @keydown.esc="cancelEditName"
-              @blur="commitName"
-            />
-            <span v-if="renaming" class="text-xs text-lg-text-muted">saving</span>
-          </div>
-          <div v-else class="group flex items-center gap-2">
+          <div class="flex items-center gap-3">
             <h1 class="text-3xl font-bold">{{ orgName || "Members" }}</h1>
             <button
               v-if="isOwner"
               type="button"
-              class="opacity-0 group-hover:opacity-100 text-[0.7rem] uppercase tracking-wider text-lg-text-muted hover:text-lg-accent-bright transition-opacity"
-              @click="startEditName"
+              class="lg-btn-secondary text-xs px-3 py-1.5 disabled:opacity-50"
+              :disabled="renaming"
+              @click="renameOrg"
               title="Rename org"
-            >rename</button>
+            >
+              {{ renaming ? "Saving..." : "Rename" }}
+            </button>
           </div>
         </div>
         <span

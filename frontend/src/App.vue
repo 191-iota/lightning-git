@@ -2,6 +2,7 @@
 import { RouterView } from 'vue-router'
 import ToastHost from '@/components/ToastHost.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import PromptDialog from '@/components/PromptDialog.vue'
 </script>
 
 <template>
@@ -12,4 +13,5 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
   <RouterView :key="$route.fullPath" />
   <ToastHost />
   <ConfirmDialog />
+  <PromptDialog />
 </template>
