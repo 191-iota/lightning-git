@@ -13,13 +13,13 @@ import type { ConflictHunk, MergeConflict } from "./client";
 // the same algorithm but adds committed branches to its source list — is
 // a strict superset and slots in seamlessly via flattenConflicts.
 
-export interface SourceInput {
+interface SourceInput {
   branch: string;
   userId: string | null;
   content: string;
 }
 
-export function computeCombinedDiff(
+function computeCombinedDiff(
   baseContent: string,
   sources: SourceInput[],
 ): ConflictHunk[] {
@@ -66,7 +66,7 @@ export function computeCombinedDiff(
   return all;
 }
 
-export function computeConflicts(allHunks: ConflictHunk[]): MergeConflict[] {
+function computeConflicts(allHunks: ConflictHunk[]): MergeConflict[] {
   if (allHunks.length === 0) return [];
   const sorted = [...allHunks].sort(
     (a, b) => a.base_start - b.base_start || a.base_end - b.base_end,

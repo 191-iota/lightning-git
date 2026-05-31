@@ -12,8 +12,8 @@ import { ConflictPanel } from "./conflictPanel";
 import { conflictsEqual } from "./conflictsEqual";
 
 /// Tagged WS message matching the backend's WsBroadcast enum. All payloads
-/// (live typing, suggestions, comment lifecycle, initial snapshot) flow
-/// through the per-file overlay channel.
+/// (live typing, comment lifecycle, initial snapshot) flow through the
+/// per-file overlay channel.
 type WsMessage =
   | { kind: "overlay"; user_id: string; content: string; line_section: [number, number] }
   | { kind: "comment_created"; id: string; user_id: string; line: number; text: string; created_at: number }
@@ -434,12 +434,6 @@ export class OverlaySession {
         this.recomputeAndRender();
         return;
     }
-  }
-
-  private sendWs(msg: WsMessage): boolean {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
-    this.ws.send(JSON.stringify(msg));
-    return true;
   }
 
   // Synchronous scan of already-open text documents; returns undefined when
