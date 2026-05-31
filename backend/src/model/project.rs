@@ -48,7 +48,6 @@ pub struct ProjectRes {
 pub struct UpdateProjectReq {
     #[validate(length(min = 3, max = 255))]
     pub name: String,
-    pub user_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize, Validate, ToSchema)]

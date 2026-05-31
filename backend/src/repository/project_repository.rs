@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::str::FromStr;
 
 use log::error;
@@ -47,50 +46,17 @@ pub async fn update_project(
     id: &Uuid,
     update_req: UpdateProjectReq,
 ) -> Result<String, RepoError> {
-    let db_result = db
-        .update(
-            "project",
-            id.to_string().as_str(),
-            json!({
-                "name": update_req.name
-            }),
-        )
-        .await;
-
-    db_result.map_err(|e| {
+    db.update(
+        "project",
+        id.to_string().as_str(),
+        json!({ "name": update_req.name }),
+    )
+    .await
+    .map_err(|e| {
         error!("Failed updating project: {e}");
         RepoError::UpdateError(String::from("Failed updating project"))
     })?;
-    let existing_ids: HashSet<String> = get_project_members_id(db, id).await?.into_iter().collect();
-
-    for user_id in update_req.user_ids {
-        if !existing_ids.contains(&user_id.to_string()) {
-            add_user_to_project(db, id, &user_id, ProjectRole::Member).await?;
-        }
-    }
     Ok(id.to_string())
-}
-
-pub async fn get_project_members_id(
-    db: &SupabaseClient,
-    project_id: &Uuid,
-) -> Result<Vec<String>, RepoError> {
-    let db_result = db
-        .select("project_members")
-        .eq("project_id", project_id.to_string().as_str())
-        .columns(vec!["user_id"])
-        .execute()
-        .await;
-
-    let response = db_result.map_err(|e| {
-        error!("Failed fetching project members: {e}");
-        RepoError::ExtractionError(String::from("Failed fetching project members"))
-    })?;
-
-    Ok(response
-        .into_iter()
-        .filter_map(|m| m["user_id"].as_str().map(String::from))
-        .collect())
 }
 
 /// Project members joined with their display names from the profiles table.
