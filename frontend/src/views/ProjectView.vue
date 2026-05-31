@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter, RouterLink } from "vue-router";
 import draggable from "vuedraggable";
 import { useAuthStore } from "@/stores/auth";
@@ -12,6 +12,8 @@ import NavBar from "@/components/NavBar.vue";
 import Skeleton from "@/components/Skeleton.vue";
 import TabStrip, { type Tab } from "@/components/TabStrip.vue";
 import CloseIcon from "@/components/CloseIcon.vue";
+import { promptDialog } from "@/utils/confirm";
+import axios from "axios";
 
 const orgStore = useOrgStore();
 const toast = useToastStore();
@@ -39,10 +41,7 @@ const projectId = computed(() => route.params.id as string);
 
 const showArchived = ref(false);
 
-const editingName = ref(false);
-const nameDraft = ref("");
 const renaming = ref(false);
-const nameInput = ref<HTMLInputElement | null>(null);
 
 const canEditName = computed(() => {
   const role = projectStore.myRole(auth.user?.id);
@@ -51,35 +50,36 @@ const canEditName = computed(() => {
   return !!orgId && orgStore.orgs.find((o) => o.id === orgId)?.role === "owner";
 });
 
-async function startEditName() {
-  nameDraft.value = projectStore.current?.name ?? "";
-  editingName.value = true;
-  await nextTick();
-  nameInput.value?.focus();
-  nameInput.value?.select();
-}
-
-function cancelEditName() {
-  editingName.value = false;
-}
-
-async function commitName() {
-  if (!editingName.value) return;
-  const next = nameDraft.value.trim();
-  if (!next || next === projectStore.current?.name) {
-    editingName.value = false;
-    return;
-  }
+async function renameProject() {
+  if (renaming.value) return;
+  const current = projectStore.current?.name ?? "";
+  const next = await promptDialog({
+    title: "Rename project",
+    label: "Project name",
+    defaultValue: current,
+    minLength: 3,
+    maxLength: 255,
+    confirmLabel: "Rename",
+  });
+  if (next === null || next === current) return;
   renaming.value = true;
   try {
     await projectStore.rename(projectId.value, next);
     toast.success("Project renamed.");
-    editingName.value = false;
-  } catch {
-    toast.error("Failed to rename project. You must be an admin.");
+  } catch (error) {
+    toast.error(renameErrorMessage(error, "project"));
   } finally {
     renaming.value = false;
   }
+}
+
+function renameErrorMessage(error: unknown, kind: string): string {
+  if (!axios.isAxiosError(error)) return `Failed to rename ${kind}.`;
+  const status = error.response?.status;
+  if (status === 401) return `Failed to rename ${kind}. You must be an admin.`;
+  if (status === 400) return `Name is not valid. Use 3 to 255 characters.`;
+  if (status && status >= 500) return `Server error renaming ${kind}.`;
+  return `Failed to rename ${kind}.`;
 }
 
 async function archiveTask(taskId: string) {
@@ -274,30 +274,20 @@ onMounted(async () => {
       <header class="mt-3 mb-6 min-h-[6rem] flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex flex-col gap-2 items-start">
           <span class="lg-scope lg-scope-project">Project</span>
-          <div v-if="editingName" class="flex items-center gap-2">
-            <input
-              ref="nameInput"
-              v-model="nameDraft"
-              minlength="2"
-              maxlength="64"
-              class="text-3xl font-bold bg-transparent border-0 border-b-2 border-lg-accent-bright/70 focus:border-lg-accent-bright focus:outline-none px-0 py-0 -mb-[2px] min-w-[10rem]"
-              @keydown.enter="commitName"
-              @keydown.esc="cancelEditName"
-              @blur="commitName"
-            />
-            <span v-if="renaming" class="text-xs text-lg-text-muted">saving</span>
-          </div>
-          <div v-else class="group flex items-center gap-2">
+          <div class="flex items-center gap-3">
             <h1 class="text-3xl font-bold">
               {{ projectStore.current?.name || "Loading..." }}
             </h1>
             <button
               v-if="canEditName && projectStore.current"
               type="button"
-              class="opacity-0 group-hover:opacity-100 text-[0.7rem] uppercase tracking-wider text-lg-text-muted hover:text-lg-accent-bright transition-opacity"
-              @click="startEditName"
+              class="lg-btn-secondary text-xs px-3 py-1.5 disabled:opacity-50"
+              :disabled="renaming"
+              @click="renameProject"
               title="Rename project"
-            >rename</button>
+            >
+              {{ renaming ? "Saving..." : "Rename" }}
+            </button>
           </div>
           <p class="text-[0.7rem] text-lg-text-muted/80 font-mono min-h-[1rem]">
             {{ projectStore.current?.repo_url || " " }}

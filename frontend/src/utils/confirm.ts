@@ -41,3 +41,50 @@ export function resolveConfirm(value: boolean): void {
 export function useConfirmState() {
   return state;
 }
+
+// ---- prompt dialog: one-field text input variant ----
+
+export interface PromptOptions {
+  title: string;
+  message?: string;
+  label?: string;
+  defaultValue?: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  minLength?: number;
+  maxLength?: number;
+}
+
+interface PromptState extends PromptOptions {
+  open: boolean;
+}
+
+const promptState = ref<PromptState>({
+  open: false,
+  title: "",
+});
+
+let promptResolver: ((value: string | null) => void) | null = null;
+
+export function promptDialog(options: PromptOptions): Promise<string | null> {
+  if (promptResolver) {
+    promptResolver(null);
+    promptResolver = null;
+  }
+  promptState.value = { ...options, open: true };
+  return new Promise<string | null>((resolve) => {
+    promptResolver = resolve;
+  });
+}
+
+export function resolvePrompt(value: string | null): void {
+  promptState.value = { ...promptState.value, open: false };
+  const r = promptResolver;
+  promptResolver = null;
+  r?.(value);
+}
+
+export function usePromptState() {
+  return promptState;
+}
