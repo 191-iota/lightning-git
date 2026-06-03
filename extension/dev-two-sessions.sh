@@ -33,7 +33,7 @@ code \
   "$WORKSPACE" &
 
 echo "Launching session B at $PROFILE_B"
-codium \
+code \
   --user-data-dir "$PROFILE_B" \
   --extensions-dir "$PROFILE_B/extensions" \
   --extensionDevelopmentPath "$EXT_DIR" \
