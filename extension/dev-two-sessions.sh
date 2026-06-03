@@ -13,7 +13,7 @@ PROFILE_A="$HOME/.config/lightning-git-dev-a"
 PROFILE_B="$HOME/.config/lightning-git-dev-b"
 # the workspace both dev hosts open so they're already in a real git repo
 # for testing overlays, conflicts, and the suggest-resolution flow.
-WORKSPACE="$HOME/code/lightning-git-test-public"
+WORKSPACE="$HOME/code/test-public"
 
 if [[ ! -d "$WORKSPACE" ]]; then
   echo "Workspace $WORKSPACE not found; aborting." >&2
@@ -25,7 +25,7 @@ cd "$EXT_DIR"
 npm run compile
 
 echo "Launching session A at $PROFILE_A"
-codium \
+code \
   --user-data-dir "$PROFILE_A" \
   --extensions-dir "$PROFILE_A/extensions" \
   --extensionDevelopmentPath "$EXT_DIR" \
