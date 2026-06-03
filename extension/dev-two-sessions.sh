@@ -20,10 +20,21 @@ if [[ ! -d "$WORKSPACE" ]]; then
   exit 1
 fi
 
+# Wipe each profile's workspace-scoped state before launching so a stale
+# value cached in workspaceState (e.g. lightningGit.projectId) from a previous
+# run can't leak into this one. Auth lives in globalState/secrets, which we
+# leave alone, so logins survive across runs.
+clear_cache() {
+  local profile="$1"
+  echo "Clearing cached workspace state for $profile"
+  rm -rf "$profile/User/workspaceStorage"
+}
+
 echo "Compiling extension at $EXT_DIR"
 cd "$EXT_DIR"
 npm run compile
 
+clear_cache "$PROFILE_A"
 echo "Launching session A at $PROFILE_A"
 code \
   --user-data-dir "$PROFILE_A" \
@@ -32,6 +43,7 @@ code \
   --new-window \
   "$WORKSPACE" &
 
+clear_cache "$PROFILE_B"
 echo "Launching session B at $PROFILE_B"
 code \
   --user-data-dir "$PROFILE_B" \
