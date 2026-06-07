@@ -4,15 +4,21 @@ use crate::model::user::GithubCallbackQuery;
 use crate::model::user::GithubTokenResponse;
 use crate::model::user::LoginPayload;
 use crate::model::user::LoginRes;
+use crate::model::user::MiddlewareData;
 use crate::model::user::RefreshReq;
 use crate::model::user::RegisterPayload;
+use crate::model::user::UpdateUsernamePayload;
+use crate::model::user::UpdateUsernameRes;
 use crate::repository::user_repository;
+use actix_web::HttpRequest;
 use actix_web::HttpResponse;
 use actix_web::web;
 use log::error;
 use log::info;
+use log::warn;
 use serde_json::json;
 use supabase_auth::models::SignUpWithPasswordOptions;
+use supabase_auth::models::UpdatedUser;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -35,6 +41,90 @@ pub async fn get_user_id_by_username(
             HttpResponse::InternalServerError().finish()
         }
     }
+}
+
+/// Change the authenticated user's username (display name).
+///
+/// The handle lives in two places: the `profiles.display_name` column the app
+/// reads everywhere (member lists, invite-by-username) and the Supabase auth
+/// user metadata seeded at signup. We treat the profiles row as the source of
+/// truth and write it first, then best-effort sync the auth metadata so a later
+/// token refresh carries the same name. The auth update uses the caller's own
+/// bearer token (PUT /auth/v1/user updates the current user).
+#[utoipa::path(
+    patch,
+    path = "/api/user/me/username",
+    request_body = UpdateUsernamePayload,
+    tag = "user",
+)]
+pub async fn update_username(
+    req: HttpRequest,
+    body: web::Json<UpdateUsernamePayload>,
+    state: web::Data<AppState>,
+    ext_data: web::ReqData<MiddlewareData>,
+) -> HttpResponse {
+    if let Err(e) = body.validate() {
+        return HttpResponse::BadRequest().json(e);
+    }
+
+    let user_id = ext_data.user_id;
+    let new_name = body.username.trim().to_string();
+
+    // Reject a handle already worn by someone else. The invite flow resolves a
+    // user from the first display_name match, so duplicates make invites
+    // ambiguous. There is no DB unique constraint, so this is a best-effort
+    // check rather than a hard guarantee against races.
+    match user_repository::get_user_id_by_username(&state.sb_client, &new_name).await {
+        Ok(matches) => {
+            if matches.iter().any(|m| m.id != user_id) {
+                return HttpResponse::Conflict().json(json!({"error": "Username already taken"}));
+            }
+        }
+        Err(e) => {
+            error!("Failed checking username availability: {e}");
+            return HttpResponse::InternalServerError()
+                .json(json!({"error": "Failed updating username"}));
+        }
+    }
+
+    // Authoritative write: the column the rest of the app reads from.
+    if let Err(e) = user_repository::update_display_name(&state.sb_client, &user_id, &new_name).await
+    {
+        error!("Failed updating display_name: {e}");
+        return HttpResponse::InternalServerError()
+            .json(json!({"error": "Failed updating username"}));
+    }
+
+    // Best-effort: keep the auth user metadata in sync so a future token still
+    // matches. The app reads from profiles, so a failure here is logged but
+    // does not fail the request.
+    if let Some(token) = bearer_token(&req) {
+        let payload = UpdatedUser {
+            email: None,
+            password: None,
+            data: Some(json!({ "display_name": new_name })),
+        };
+        if let Err(e) = state.auth_client.update_user(payload, &token).await {
+            warn!("display_name updated in profiles but auth metadata sync failed: {e}");
+        }
+    } else {
+        warn!("display_name updated in profiles but no bearer token to sync auth metadata");
+    }
+
+    HttpResponse::Ok().json(UpdateUsernameRes {
+        display_name: new_name,
+    })
+}
+
+/// Pull the raw access token out of the Authorization header, dropping the
+/// "Bearer " prefix the Supabase auth client adds back itself.
+fn bearer_token(req: &HttpRequest) -> Option<String> {
+    req.headers()
+        .get("Authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+        .map(|t| t.to_string())
 }
 
 /// Sign a new user up via Supabase Auth, storing their chosen username

@@ -15,8 +15,10 @@ use httpmock::prelude::*;
 use uuid::Uuid;
 
 use crate::handler::project_handler::{get_project, list_project_tree};
+use crate::handler::user_handler::update_username;
 use crate::model::user::MiddlewareData;
 use crate::test::helpers::helpers::test_app_state_with_supabase;
+use serde_json::json;
 
 /// Test-only middleware: reads X-Test-User-Id and inserts MiddlewareData so
 /// downstream handlers behave as if a real JWT had been validated. No request
@@ -126,6 +128,84 @@ async fn non_member_cannot_list_project_tree() {
     let resp = test::call_service(&app, req).await;
 
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Username change rejects an unauthenticated caller before touching any data.
+#[actix_web::test]
+async fn update_username_without_auth_returns_401() {
+    let state = web::Data::new(test_app_state_with_supabase("http://localhost"));
+    let app = test::init_service(
+        App::new()
+            .app_data(state.clone())
+            .wrap(from_fn(fake_auth))
+            .route("/user/me/username", web::patch().to(update_username)),
+    )
+    .await;
+
+    let req = test::TestRequest::patch()
+        .uri("/user/me/username")
+        .set_json(json!({ "username": "new_name" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Username change runs the same validation as registration: a handle shorter
+/// than three characters is rejected with 400 before any DB lookup.
+#[actix_web::test]
+async fn update_username_rejects_invalid_handle() {
+    let state = web::Data::new(test_app_state_with_supabase("http://localhost"));
+    let app = test::init_service(
+        App::new()
+            .app_data(state.clone())
+            .wrap(from_fn(fake_auth))
+            .route("/user/me/username", web::patch().to(update_username)),
+    )
+    .await;
+
+    let req = test::TestRequest::patch()
+        .uri("/user/me/username")
+        .insert_header(("X-Test-User-Id", Uuid::new_v4().to_string()))
+        .set_json(json!({ "username": "ab" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+/// A handle already held by a different user is rejected with 409. The profiles
+/// lookup returns a row whose id differs from the caller, so the conflict guard
+/// fires before any write happens.
+#[actix_web::test]
+async fn update_username_rejects_taken_handle() {
+    let server = MockServer::start_async().await;
+    let other_user = Uuid::new_v4();
+    let _profiles_mock = server
+        .mock_async(|when, then| {
+            when.method(GET).path("/rest/v1/profiles");
+            then.status(200)
+                .body(format!(r#"[{{"display_name":"taken","id":"{other_user}"}}]"#));
+        })
+        .await;
+
+    let state = web::Data::new(test_app_state_with_supabase(&server.base_url()));
+    let app = test::init_service(
+        App::new()
+            .app_data(state.clone())
+            .wrap(from_fn(fake_auth))
+            .route("/user/me/username", web::patch().to(update_username)),
+    )
+    .await;
+
+    let req = test::TestRequest::patch()
+        .uri("/user/me/username")
+        .insert_header(("X-Test-User-Id", Uuid::new_v4().to_string()))
+        .set_json(json!({ "username": "taken" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
 
 /// TF13 variant: missing user id from the test middleware short-circuits
