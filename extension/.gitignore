@@ -4,7 +4,6 @@ out/
 .vscode-test/
 *.vsix
 *.tgz
-package-lock.json
 pnpm-lock.yaml
 yarn.lock
 coverage/
