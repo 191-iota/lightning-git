@@ -96,16 +96,6 @@ export class LightningGitClient {
     return response.data;
   }
 
-  async createProject(repoUrl: string, name: string, orgId: string): Promise<string> {
-    const response = await this.http.post("/api/projects", {
-      repo_url: repoUrl,
-      name,
-      org_id: orgId,
-      create_tasks_retroactively: false,
-    });
-    return response.data as string;
-  }
-
   async getProject(projectId: string): Promise<LightningGitProject> {
     const response = await this.http.get(`/api/projects/${projectId}`);
     return response.data as LightningGitProject;

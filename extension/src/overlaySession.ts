@@ -448,17 +448,14 @@ export class OverlaySession {
     return undefined;
   }
 
-  /// Convenient accessor for the conflict panel.
   getActiveFile(): string | undefined {
     return this.activeFile;
   }
 
-  /// Convenient accessor for the conflict panel.
   getCurrentUserId(): string {
     return this.userId;
   }
 
-  /// Convenient accessor for the conflict panel.
   authorLabelFor(userId: string): string {
     return this.authorLabel(userId);
   }

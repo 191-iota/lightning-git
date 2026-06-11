@@ -86,10 +86,6 @@ export function activate(context: vscode.ExtensionContext): void {
     });
   }
 
-  function getWorkspaceFolderName(): string {
-    return vscode.workspace.workspaceFolders?.[0]?.name ?? "Untitled";
-  }
-
   // collapses every git URL form to just "owner/repo" so https on the web side
   // matches ssh + ssh-config-alias on the local side. handles:
   //   https://github.com/owner/repo.git
@@ -139,68 +135,12 @@ export function activate(context: vscode.ExtensionContext): void {
       return undefined;
     }
 
-    const create = await vscode.window.showInformationMessage(
-      `No Lightning Git project found for ${repoUrl}. Create one?`,
-      { modal: true },
-      "Create",
+    // Projects are created in the web frontend only; the extension just links
+    // an existing project to this workspace.
+    void vscode.window.showWarningMessage(
+      `No Lightning Git project found for ${repoUrl}. Create the project in the web frontend, then start a session here.`,
     );
-    if (create !== "Create") return undefined;
-
-    return runCreateProject(repoUrl);
-  }
-
-  async function runCreateProject(prefillRepoUrl?: string): Promise<string | undefined> {
-    let repoUrl = prefillRepoUrl ?? (await getWorkspaceRemoteUrl());
-    if (!repoUrl) {
-      repoUrl = await vscode.window.showInputBox({
-        prompt: "Enter the Git repository URL",
-        placeHolder: "https://github.com/owner/repo.git",
-        ignoreFocusOut: true,
-      });
-      if (!repoUrl) return undefined;
-    }
-
-    const name = await vscode.window.showInputBox({
-      prompt: "Project name",
-      value: getWorkspaceFolderName(),
-      ignoreFocusOut: true,
-    });
-    if (!name) return undefined;
-
-    // org picker instead of pasting a UUID
-    let orgs: { id: string; name: string }[];
-    try {
-      orgs = await client.listMyOrgs();
-    } catch (error) {
-      void vscode.window.showErrorMessage(`Failed to load your orgs: ${getErrorMessage(error)}`);
-      return undefined;
-    }
-    if (orgs.length === 0) {
-      void vscode.window.showWarningMessage(
-        "You don't belong to any organization yet. Create one in the web frontend first.",
-      );
-      return undefined;
-    }
-    const orgPick = await vscode.window.showQuickPick(
-      orgs.map((o) => ({ label: o.name, description: o.id, id: o.id })),
-      { placeHolder: "Pick an organization", ignoreFocusOut: true },
-    );
-    if (!orgPick) return undefined;
-
-    try {
-      const projectId = await client.createProject(repoUrl, name, orgPick.id);
-      await context.workspaceState.update(WORKSPACE_PROJECT_KEY, projectId);
-      await context.globalState.update("lightningGit.lastOrgId", orgPick.id);
-      void vscode.window.showInformationMessage(`Project "${name}" created.`);
-      return projectId;
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 401) {
-        void vscode.window.showErrorMessage("You're not a member of this organization. Ask the org owner to add you.");
-        return undefined;
-      }
-      void vscode.window.showErrorMessage(`Failed to create project: ${getErrorMessage(error)}`);
-      return undefined;
-    }
+    return undefined;
   }
 
   // ---------- commands ----------
@@ -246,11 +186,6 @@ export function activate(context: vscode.ExtensionContext): void {
     overlaySession?.dispose();
     overlaySession = undefined;
     void vscode.window.showInformationMessage("Logged out successfully.");
-  });
-
-  const createProjectCommand = vscode.commands.registerCommand("lightning-git.createProject", async () => {
-    if (!(await ensureLoggedIn())) return;
-    await runCreateProject();
   });
 
   const startSessionCommand = vscode.commands.registerCommand("lightning-git.startSession", async () => {
@@ -357,7 +292,6 @@ export function activate(context: vscode.ExtensionContext): void {
     registerCommand,
     loginCommand,
     logoutCommand,
-    createProjectCommand,
     startSessionCommand,
     stopSessionCommand,
     viewChangeCommand,
