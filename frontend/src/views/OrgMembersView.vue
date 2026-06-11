@@ -8,7 +8,6 @@ import { useToastStore } from "@/stores/toast";
 import { useProjectStore } from "@/stores/project";
 import type { OrgMember } from "@/types/api";
 import NavBar from "@/components/NavBar.vue";
-import UserMenu from "@/components/UserMenu.vue";
 import TabStrip, { type Tab } from "@/components/TabStrip.vue";
 import { confirmDialog, promptDialog } from "@/utils/confirm";
 
@@ -213,7 +212,8 @@ async function deleteOrg() {
     <NavBar>
       <RouterLink to="/pricing" class="lg-link">Pricing</RouterLink>
       <RouterLink to="/orgs" class="lg-link">Switch org</RouterLink>
-      <UserMenu @logout="onLogout" />
+      <span class="text-lg-text-muted hidden sm:inline">{{ auth.user?.email }}</span>
+      <button class="lg-link" @click="onLogout">Sign out</button>
     </NavBar>
 
     <main class="lg-container py-10">

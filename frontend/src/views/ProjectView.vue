@@ -9,7 +9,6 @@ import { useActivityStore } from "@/stores/activity";
 import { useToastStore } from "@/stores/toast";
 import type { ActiveEdit, Task } from "@/types/api";
 import NavBar from "@/components/NavBar.vue";
-import UserMenu from "@/components/UserMenu.vue";
 import Skeleton from "@/components/Skeleton.vue";
 import TabStrip, { type Tab } from "@/components/TabStrip.vue";
 import CloseIcon from "@/components/CloseIcon.vue";
@@ -263,7 +262,8 @@ onMounted(async () => {
         {{ wsState }}
       </span>
       <RouterLink to="/orgs" class="lg-link">Switch org</RouterLink>
-      <UserMenu @logout="onLogout" />
+      <span class="text-lg-text-muted hidden sm:inline">{{ auth.user?.email }}</span>
+      <button class="lg-link" @click="onLogout">Sign out</button>
     </NavBar>
 
     <main class="lg-container py-10">

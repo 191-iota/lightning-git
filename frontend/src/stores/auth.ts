@@ -1,13 +1,11 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api, { onUnauthorized } from "@/services/api";
-import { displayNameFromToken } from "@/utils/jwt";
 import type {
   LoginPayload,
   LoginRes,
   RefreshRes,
   RegisterPayload,
-  UpdateUsernameRes,
   User,
 } from "@/types/api";
 
@@ -22,9 +20,6 @@ export const useAuthStore = defineStore("auth", () => {
   const refreshToken = ref<string | null>(localStorage.getItem(REFRESH_KEY));
 
   const isAuthenticated = computed(() => !!token.value);
-  // handle to show in the nav: the chosen username, with the email as fallback
-  // for sessions where the name could not be read from the token.
-  const displayName = computed(() => user.value?.display_name || user.value?.email || "");
 
   function setSession(access: string, refresh: string, newUser: User) {
     token.value = access;
@@ -82,27 +77,11 @@ export const useAuthStore = defineStore("auth", () => {
 
   async function login(credentials: LoginPayload) {
     const { data } = await api.post<LoginRes>("/login", credentials);
-    setSession(data.access_token, data.refresh_token, {
-      id: data.user_id,
-      email: data.email,
-      display_name: displayNameFromToken(data.access_token),
-    });
+    setSession(data.access_token, data.refresh_token, { id: data.user_id, email: data.email });
   }
 
   async function register(payload: RegisterPayload) {
     await api.post("/register", payload);
-  }
-
-  // Persist a new handle on the backend, then mirror it locally. The held
-  // access token still carries the old name until the next refresh, so we keep
-  // our own copy current instead of re-reading it from the token.
-  async function changeUsername(username: string) {
-    const { data } = await api.patch<UpdateUsernameRes>("/api/user/me/username", { username });
-    if (user.value) {
-      user.value = { ...user.value, display_name: data.display_name };
-      localStorage.setItem(USER_KEY, JSON.stringify(user.value));
-    }
-    return data.display_name;
   }
 
   function logout() {
@@ -114,10 +93,8 @@ export const useAuthStore = defineStore("auth", () => {
     token,
     refreshToken,
     isAuthenticated,
-    displayName,
     login,
     register,
-    changeUsername,
     logout,
     refresh,
   };

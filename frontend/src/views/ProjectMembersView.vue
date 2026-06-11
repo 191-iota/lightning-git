@@ -8,7 +8,6 @@ import { useAuthStore } from "@/stores/auth";
 import { useToastStore } from "@/stores/toast";
 import type { OrgMember, ProjectMember } from "@/types/api";
 import NavBar from "@/components/NavBar.vue";
-import UserMenu from "@/components/UserMenu.vue";
 import TabStrip, { type Tab } from "@/components/TabStrip.vue";
 import { confirmDialog } from "@/utils/confirm";
 
@@ -203,7 +202,8 @@ async function deleteProject() {
   <div class="min-h-screen bg-lg-bg text-lg-text">
     <NavBar>
       <RouterLink to="/orgs" class="lg-link">Switch org</RouterLink>
-      <UserMenu @logout="onLogout" />
+      <span class="text-lg-text-muted hidden sm:inline">{{ auth.user?.email }}</span>
+      <button class="lg-link" @click="onLogout">Sign out</button>
     </NavBar>
 
     <main class="lg-container py-10">

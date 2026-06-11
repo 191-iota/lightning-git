@@ -6,7 +6,6 @@ import { useOrgStore } from "@/stores/org";
 import { useProjectStore } from "@/stores/project";
 import { useToastStore } from "@/stores/toast";
 import NavBar from "@/components/NavBar.vue";
-import UserMenu from "@/components/UserMenu.vue";
 import Skeleton from "@/components/Skeleton.vue";
 import TabStrip, { type Tab } from "@/components/TabStrip.vue";
 
@@ -73,7 +72,8 @@ async function onLogout() {
     <NavBar>
       <RouterLink to="/pricing" class="lg-link">Pricing</RouterLink>
       <RouterLink to="/orgs" class="lg-link">Switch org</RouterLink>
-      <UserMenu @logout="onLogout" />
+      <span class="text-lg-text-muted hidden sm:inline">{{ authStore.user?.email }}</span>
+      <button class="lg-link" @click="onLogout">Sign out</button>
     </NavBar>
 
     <main class="lg-container py-10">
