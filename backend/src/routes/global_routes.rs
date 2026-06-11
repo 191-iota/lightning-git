@@ -42,7 +42,6 @@ use crate::handler::user_handler::github_callback;
 use crate::handler::user_handler::login;
 use crate::handler::user_handler::refresh_token;
 use crate::handler::user_handler::register;
-use crate::handler::user_handler::update_username;
 use crate::model::user::MiddlewareData;
 use actix_web::Error;
 use actix_web::HttpMessage;
@@ -93,8 +92,6 @@ pub fn init_api_scope(cfg: &mut web::ServiceConfig) {
                 "/merge/{project_id}/{file_name:.*}",
                 web::get().to(get_merge_conflicts),
             )
-            // must come before /user/{username} so "me" isnt matched as a username
-            .route("/user/me/username", web::patch().to(update_username))
             .route("/user/{username}", web::get().to(get_user_id_by_username))
             .route("/orgs", web::post().to(create_org))
             // must come before /orgs/{id} so "mine" doesnt match as a uuid

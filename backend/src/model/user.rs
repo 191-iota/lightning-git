@@ -35,20 +35,6 @@ pub struct RegisterPayload {
     pub password: String,
 }
 
-/// New handle the authenticated user wants to switch to. Same rules as the
-/// username chosen at registration so a changed handle stays valid everywhere.
-#[derive(Deserialize, Validate, ToSchema)]
-pub struct UpdateUsernamePayload {
-    #[validate(length(min = 3, max = 32))]
-    #[validate(custom(function = "validate_username"))]
-    pub username: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct UpdateUsernameRes {
-    pub display_name: String,
-}
-
 #[derive(Clone)]
 pub struct MiddlewareData {
     pub user_id: Uuid,
