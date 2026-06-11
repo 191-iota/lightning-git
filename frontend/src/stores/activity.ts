@@ -90,5 +90,34 @@ export const useActivityStore = defineStore("activity", () => {
     state.value = "closed";
   }
 
+  // The browser does not reliably fire onclose on an already-open socket when
+  // the network drops , DevTools "Offline" in particular leaves it OPEN , so
+  // the status would otherwise stay "live". The online/offline events do fire
+  // reliably, so we drive the connection state from them too.
+  function handleOffline() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    // bump the generation so the dead socket's async onclose short-circuits
+    // (no duplicate state write, no reconnect scheduled while we're offline)
+    generation++;
+    ws?.close();
+    ws = null;
+    state.value = "closed";
+  }
+
+  function handleOnline() {
+    // reconnect at once instead of waiting for the socket to time out;
+    // open() flips the status back to "connecting" and re-subscribes, and the
+    // backend pushes the current edits on the fresh connection.
+    if (currentProjectId) open();
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+  }
+
   return { edits, state, ensure, dispose };
 });

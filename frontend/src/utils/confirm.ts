@@ -54,6 +54,10 @@ export interface PromptOptions {
   cancelLabel?: string;
   minLength?: number;
   maxLength?: number;
+  // optional charset rule (source string for a RegExp) plus the hint shown when
+  // the input violates it.
+  pattern?: string;
+  patternHint?: string;
 }
 
 interface PromptState extends PromptOptions {
