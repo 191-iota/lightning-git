@@ -11,7 +11,7 @@ use crate::model::project::ProjectMemberRes;
 use crate::model::project::ProjectRole;
 use crate::model::project::UpdateProjectReq;
 
-// repo errors are currently redundantly handled for extensibility purposes
+// repo errors are currently redundantly handled per method
 // for repo methods to scale well, one calc per http call is important -> sql joins, orm,
 // responseobjects in one method
 pub async fn save_project(

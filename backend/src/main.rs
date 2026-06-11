@@ -47,7 +47,6 @@ use crate::handler::user_handler::__path_get_user_id_by_username;
 use crate::handler::user_handler::__path_login;
 use crate::handler::user_handler::__path_refresh_token;
 use crate::handler::user_handler::__path_register;
-use crate::handler::user_handler::__path_update_username;
 use crate::model::org::AddOrgMemberReq;
 use crate::model::org::CreateOrgReq;
 use crate::model::org::CreateOrgRes;
@@ -77,8 +76,6 @@ use crate::model::user::LoginPayload;
 use crate::model::user::RefreshReq;
 use crate::model::user::RefreshRes;
 use crate::model::user::RegisterPayload;
-use crate::model::user::UpdateUsernamePayload;
-use crate::model::user::UpdateUsernameRes;
 use crate::model::user::UserSearchEntryRes;
 use actix_web::App;
 use actix_web::HttpServer;
@@ -149,7 +146,6 @@ async fn main() -> std::io::Result<()> {
             register,
             login,
             refresh_token,
-            update_username,
             get_overlay,
             create_active_overlay,
             wipe_my_overlay,
@@ -181,8 +177,6 @@ async fn main() -> std::io::Result<()> {
                 RegisterPayload,
                 RefreshReq,
                 RefreshRes,
-                UpdateUsernamePayload,
-                UpdateUsernameRes,
                 OverlayViewRes,
                 UpdateProjectReq,
                 ProjectMemberRes,

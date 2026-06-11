@@ -29,33 +29,6 @@ pub async fn update_access_token(
     Ok(())
 }
 
-/// Persist a new handle in the profiles table. This is the row the rest of the
-/// app reads from (member lists, the invite-by-username lookup), so it is the
-/// authoritative copy of the display name. The matching copy in the Supabase
-/// auth user metadata is kept in sync separately by the handler.
-pub async fn update_display_name(
-    db: &SupabaseClient,
-    user_id: &Uuid,
-    display_name: &str,
-) -> Result<(), RepoError> {
-    let db_result = db
-        .update(
-            "profiles",
-            user_id.to_string().as_str(),
-            json!({
-                "display_name": display_name,
-            }),
-        )
-        .await;
-
-    db_result.map_err(|e| {
-        error!("Failed updating display_name: {e}");
-        RepoError::UpdateError(String::from("Failed updating display_name"))
-    })?;
-
-    Ok(())
-}
-
 pub async fn get_access_token(
     db: &SupabaseClient,
     user_id: &Uuid,

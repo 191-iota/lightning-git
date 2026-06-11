@@ -48,12 +48,10 @@ pub enum AuthError {
 
 impl AuthError {
     /// Classifies a supabase-auth error into an AuthError variant by examining the error message.
-    /// This provides a more structured way to handle errors than direct string matching in handlers.
     pub fn from_supabase_error(error: &impl std::fmt::Display) -> Self {
         let err_msg = error.to_string();
         let err_lower = err_msg.to_lowercase();
 
-        // Pattern match based on error message content
         // Order matters: more specific patterns should come first
         if err_lower.contains("already") && err_lower.contains("email") {
             AuthError::EmailAlreadyExists
