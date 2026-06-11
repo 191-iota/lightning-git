@@ -26,10 +26,6 @@
         "title": "Lightning Git: Logout"
       },
       {
-        "command": "lightning-git.createProject",
-        "title": "Lightning Git: Create Project"
-      },
-      {
         "command": "lightning-git.startSession",
         "title": "Lightning Git: Start Session"
       },
