@@ -25,12 +25,19 @@ const tooShort = computed(() =>
 const tooLong = computed(() =>
   state.value.maxLength !== undefined && trimmed.value.length > state.value.maxLength,
 );
-const invalid = computed(() => trimmed.value.length === 0 || tooShort.value || tooLong.value);
+const patternMismatch = computed(() => {
+  if (!state.value.pattern || trimmed.value.length === 0) return false;
+  return !new RegExp(state.value.pattern).test(trimmed.value);
+});
+const invalid = computed(
+  () => trimmed.value.length === 0 || tooShort.value || tooLong.value || patternMismatch.value,
+);
 
 const validationHint = computed(() => {
   if (trimmed.value.length === 0) return "Required.";
   if (tooShort.value) return `At least ${state.value.minLength} characters.`;
   if (tooLong.value) return `At most ${state.value.maxLength} characters.`;
+  if (patternMismatch.value) return state.value.patternHint || "Invalid format.";
   return "";
 });
 

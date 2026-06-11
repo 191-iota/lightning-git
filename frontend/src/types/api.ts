@@ -21,9 +21,21 @@ export interface RefreshRes {
   refresh_token: string;
 }
 
+export interface UpdateUsernamePayload {
+  username: string;
+}
+
+export interface UpdateUsernameRes {
+  display_name: string;
+}
+
 export interface User {
   id: string;
   email: string;
+  // the handle (display_name). seeded from the JWT user_metadata at login and
+  // kept current after a username change. optional because older sessions may
+  // have been stored before this field existed.
+  display_name?: string;
 }
 
 export interface MyOrg {

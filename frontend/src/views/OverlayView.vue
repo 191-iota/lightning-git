@@ -11,6 +11,7 @@ import FileTreeNode from "@/components/FileTreeNode.vue";
 import { buildTree, computeProjectedLines, type ProjLine } from "@/utils/overlay";
 import { computeCombinedDiff, computeConflicts, flattenConflicts } from "@/utils/merge";
 import NavBar from "@/components/NavBar.vue";
+import UserMenu from "@/components/UserMenu.vue";
 import Skeleton from "@/components/Skeleton.vue";
 import TabStrip, { type Tab } from "@/components/TabStrip.vue";
 import { useToastStore } from "@/stores/toast";
@@ -648,8 +649,7 @@ onUnmounted(() => {
   <div class="min-h-screen bg-lg-bg text-lg-text">
     <NavBar>
       <RouterLink to="/orgs" class="lg-link">Switch org</RouterLink>
-      <span class="text-lg-text-muted hidden sm:inline">{{ auth.user?.email }}</span>
-      <button class="lg-link" @click="onLogout">Sign out</button>
+      <UserMenu @logout="onLogout" />
     </NavBar>
 
     <main class="lg-container py-10">
