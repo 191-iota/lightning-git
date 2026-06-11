@@ -149,10 +149,9 @@ function openOverlay(branch: string) {
 const projectEdits = computed<ActiveEdit[]>(() => activityStore.edits);
 const wsState = computed(() => activityStore.state);
 
-// Board state. Local arrays so vuedraggable can mutate them on drag.
-// Column assignments persist per (project, task) via localStorage , no backend
-// Each task carries its column server-side. Drag updates the DB so every
-// teammate sees the same board.
+// local arrays so vuedraggable can mutate them on drag. each task's column
+// lives server-side; persistColumnChange patches it so every teammate sees
+// the same board.
 type ColumnId = "todo" | "in_progress" | "review" | "merged";
 const COLUMN_IDS: ColumnId[] = ["todo", "in_progress", "review", "merged"];
 const board = ref<Record<ColumnId, Task[]>>({
