@@ -23,6 +23,10 @@ export const useOrgStore = defineStore("org", () => {
 
   async function create(req: CreateOrgReq): Promise<string> {
     const { data } = await api.post<CreateOrgRes>("/api/orgs", req);
+    // the backend registers the creator as owner; mirror that into the local
+    // list so role-gated views (e.g. the org members/invite UI) resolve the
+    // role without waiting for a refetch that only happens when the list is empty.
+    orgs.value = [...orgs.value, { id: data.org_id, name: req.name, role: "owner" }];
     return data.org_id;
   }
 
