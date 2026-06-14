@@ -193,14 +193,99 @@ pub async fn github_callback(
         .json(&json!({
             "client_id": state.github_client_id,
             "client_secret": state.github_client_secret,
-            "code": query.code
+            "code": query.code,
+            // Must match the redirect_uri used in github_auth or GitHub rejects it.
+            "redirect_uri": state.github_callback_url
         }))
         .send()
         .await;
 
-    let token: GithubTokenResponse = res.unwrap().json().await.unwrap();
-    user_repository::update_access_token(&state.sb_client, &query.state, token.access_token)
-        .await
-        .unwrap();
-    HttpResponse::Ok().finish()
+    // Never unwrap on the network call: a failed request must not kill the worker.
+    let resp = match res {
+        Ok(r) => r,
+        Err(e) => {
+            error!("GitHub token exchange request failed: {e}");
+            return HttpResponse::BadGateway()
+                .body("Could not reach GitHub. Please retry the authorization.");
+        }
+    };
+
+    let status = resp.status();
+    // Read the body as text FIRST so we can log GitHub's real error instead of
+    // panicking on a missing `access_token` field.
+    let body = match resp.text().await {
+        Ok(b) => b,
+        Err(e) => {
+            error!("Failed reading GitHub token response body: {e}");
+            return HttpResponse::BadGateway()
+                .body("Invalid response from GitHub. Please retry the authorization.");
+        }
+    };
+
+    match serde_json::from_str::<GithubTokenResponse>(&body) {
+        // Happy path: we got a token. Store it BEFORE anything can fail so the
+        // clone step can later read it back. A DB failure here is logged, not panicked.
+        Ok(token) => {
+            if let Err(e) =
+                user_repository::update_access_token(&state.sb_client, &query.state, token.access_token)
+                    .await
+            {
+                error!("GitHub token obtained but DB update failed for user {}: {e}", &query.state);
+                return HttpResponse::InternalServerError()
+                    .body("Authorized with GitHub but failed to save the token. Please retry.");
+            }
+            info!("GitHub token stored for user {}", &query.state);
+            HttpResponse::Ok()
+                .content_type("text/html; charset=utf-8")
+                .body(GITHUB_OK_HTML)
+        }
+        // GitHub did not return a token (e.g. bad_verification_code). Log the real
+        // reason, then handle the single-use-code / duplicate-callback race.
+        Err(_) => {
+            let gh_err = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(String::from))
+                .unwrap_or_else(|| "unknown_error".to_string());
+            error!(
+                "GitHub token exchange returned no access_token (status {status}, error '{gh_err}'). Raw body: {body}"
+            );
+
+            // The OAuth code is single-use: when GitHub redirects the callback more
+            // than once, the first request consumes the code and stores the token,
+            // and the rest land here with bad_verification_code. If a token is
+            // already on file for this user, that race already succeeded.
+            if let Ok(uid) = Uuid::parse_str(&query.state) {
+                if let Ok(Some(_)) =
+                    user_repository::get_access_token(&state.sb_client, &uid).await
+                {
+                    info!(
+                        "Token already stored for user {} (duplicate callback) — treating as success",
+                        &query.state
+                    );
+                    return HttpResponse::Ok()
+                        .content_type("text/html; charset=utf-8")
+                        .body(GITHUB_OK_HTML);
+                }
+            }
+
+            HttpResponse::BadRequest()
+                .content_type("text/html; charset=utf-8")
+                .body(format!(
+                    "<!doctype html><html><body style=\"font-family:system-ui;text-align:center;padding-top:3rem\">\
+                     <h2>GitHub authorization failed</h2>\
+                     <p>GitHub said: <code>{gh_err}</code>.</p>\
+                     <p>The authorization code is single-use and expires after a few minutes.<br>\
+                     Please click <b>Authorize on GitHub</b> again and complete it in one go.</p>\
+                     </body></html>"
+                ))
+        }
+    }
 }
+
+/// Shown in the OAuth popup tab after the token is stored. Auto-closes so the
+/// user lands back on the project-create form instead of a blank page.
+const GITHUB_OK_HTML: &str = "<!doctype html><html><body style=\"font-family:system-ui;text-align:center;padding-top:3rem\">\
+     <h2>GitHub authorized</h2>\
+     <p>Lightning Git can now clone your private repositories.<br>You can close this tab and return to the app.</p>\
+     <script>setTimeout(function(){window.close()},1500)</script>\
+     </body></html>";

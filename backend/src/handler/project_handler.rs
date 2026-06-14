@@ -22,6 +22,7 @@ use actix_web::HttpResponse;
 use actix_web::http::header::CONTENT_TYPE;
 use actix_web::web;
 use log::error;
+use log::warn;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -55,7 +56,19 @@ pub async fn create_project(
     let clone_url =
         match user_repository::get_access_token(&state.sb_client, &ext_data.user_id).await {
             Ok(Some(token)) => inject_token(&req.repo_url, &token),
-            _ => req.repo_url.clone(),
+            Ok(None) => {
+                // No stored GitHub token: the user has not finished "Authorize on
+                // GitHub" yet, so a private repo will fail to clone below.
+                warn!(
+                    "No GitHub token for user {} — cloning {} unauthenticated (private repos will fail)",
+                    &ext_data.user_id, &req.repo_url
+                );
+                req.repo_url.clone()
+            }
+            Err(e) => {
+                error!("Failed reading GitHub token for user {}: {e}", &ext_data.user_id);
+                req.repo_url.clone()
+            }
         };
 
     if let Err(e) = git_service::clone_repo(&clone_url, &repo_path).await {
