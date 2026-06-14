@@ -319,7 +319,6 @@ async function deleteProject() {
                 >{{ m.role }}</span>
                 <span v-if="m.id === auth.user?.id" class="text-xs text-lg-text-muted">you</span>
               </p>
-              <p class="text-xs text-lg-text-muted font-mono mt-1 truncate">{{ m.id }}</p>
             </div>
             <button
               v-if="isAdmin"
