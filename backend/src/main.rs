@@ -286,9 +286,12 @@ async fn init_app_state() -> AppState {
 }
 
 fn init_supabase_db_client() -> SupabaseClient {
+    // The backend is a trusted server, so its DB client must use the SERVICE_ROLE
+    // key. RLS on `profiles` only grants SELECT to anon — writes (e.g. storing the
+    // GitHub token) require service_role, otherwise the UPDATE silently affects 0 rows.
     supabase_rs::SupabaseClient::new(
         env::var("SUPABASE_URL").expect("Could not find SUPABASE_URL"),
-        env::var("SUPABASE_API_KEY").expect("Could not find SUPABASE_ANON_KEY"),
+        env::var("SUPABASE_API_KEY").expect("Could not find SUPABASE_API_KEY"),
     )
     .expect("Failed initializing Supabase client")
 }
@@ -297,8 +300,10 @@ fn init_auth_client() -> AuthClient {
     dotenv().ok();
 
     let url = env::var("SUPABASE_URL").expect("Undefined env: SUPABASE_URL");
-    let api_key = env::var("SUPABASE_API_KEY").expect("Undefined env: SUPABASE_API_KEY");
+    // gotrue auth calls must send the public ANON key as the apikey header.
     let anon_key = env::var("SUPABASE_ANON_KEY").expect("Undefined env: SUPABASE_ANON_KEY");
+    let service_key = env::var("SUPABASE_API_KEY").expect("Undefined env: SUPABASE_API_KEY");
 
-    AuthClient::new(url, api_key, anon_key)
+    // AuthClient::new(url, api_key, jwt_secret): apikey header = anon key.
+    AuthClient::new(url, anon_key, service_key)
 }
