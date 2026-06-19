@@ -26,7 +26,6 @@ function pick(id: string) {
 <template>
   <div class="min-h-screen bg-lg-bg text-lg-text">
     <NavBar brand-to="/orgs">
-      <RouterLink to="/pricing" class="lg-link">Pricing</RouterLink>
     </NavBar>
 
     <main class="lg-container py-12">
