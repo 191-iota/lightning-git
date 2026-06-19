@@ -5,7 +5,6 @@ use actix_web::web;
 use crate::config::middleware;
 use crate::handler::config_handler::health_check;
 use crate::model::app_state::AppState;
-use crate::handler::merge_handler::get_merge_conflicts;
 use crate::handler::org_handler::add_org_member;
 use crate::handler::org_handler::create_org;
 use crate::handler::org_handler::delete_org;
@@ -88,10 +87,6 @@ pub fn init_api_scope(cfg: &mut web::ServiceConfig) {
                 web::put().to(create_active_overlay),
             )
             .route("/overlay/me/{proj_id}", web::delete().to(wipe_my_overlay))
-            .route(
-                "/merge/{project_id}/{file_name:.*}",
-                web::get().to(get_merge_conflicts),
-            )
             .route("/user/{username}", web::get().to(get_user_id_by_username))
             .route("/orgs", web::post().to(create_org))
             // must come before /orgs/{id} so "mine" doesnt match as a uuid

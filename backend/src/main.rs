@@ -12,7 +12,6 @@ use self::model::app_state::AppState;
 use self::model::overlay::ProjectLiveState;
 use self::routes::global_routes;
 use crate::handler::config_handler::__path_health_check;
-use crate::handler::merge_handler::__path_get_merge_conflicts;
 use crate::handler::org_handler::__path_add_org_member;
 use crate::handler::org_handler::__path_create_org;
 use crate::handler::org_handler::__path_delete_org;
@@ -149,7 +148,6 @@ async fn main() -> std::io::Result<()> {
             get_overlay,
             create_active_overlay,
             wipe_my_overlay,
-            get_merge_conflicts,
             ws_overlay_stream,
             ws_project_activity,
             get_user_id_by_username,
