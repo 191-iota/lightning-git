@@ -93,12 +93,20 @@ pub enum WsBroadcast {
         comments: Vec<Comment>,
         all_user_contents: Vec<UserOverlayRes>,
     },
+    /// Predicted merge conflicts for this file across all live branches.
+    /// Pushed server -> client on connect and on every overlay edit, so
+    /// clients no longer poll GET /api/merge. Clients REPLACE their whole
+    /// conflict set on each message (no client-side union/fallback).
+    Conflicts {
+        file: String,
+        conflicts: Vec<Conflict>,
+    },
 }
 
 // A hunk is a contiguous region of changed lines in a diff. Git uses the same term.
 // user_id is Some for hunks sourced from a live overlay (so the UI can name
 // the editing user), None for hunks read from a branch's committed content.
-#[derive(Debug, ToSchema, Serialize, Clone)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, Clone)]
 pub struct Hunk {
     pub branch: String,
     #[schema(value_type = Option<String>)]
@@ -109,7 +117,7 @@ pub struct Hunk {
 }
 
 // TODO: rename to ConflictRes
-#[derive(Serialize, ToSchema, Debug)]
+#[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
 pub struct Conflict {
     pub base_start: usize,
     pub base_end: usize,
