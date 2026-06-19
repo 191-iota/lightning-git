@@ -29,7 +29,6 @@ interface PanelConflict {
 // versions, each version a content block grouped by branch + content sig.
 export class ConflictPanel {
   private readonly panel: vscode.WebviewPanel;
-  private latest: MergeConflict[] = [];
   // local disposal flag because the WebviewPanel's own dispose semantics
   // are async — if reveal/update gets called between user-clicks-X and
   // onDidDispose firing, calls on the underlying panel throw silently
@@ -69,7 +68,6 @@ export class ConflictPanel {
 
   update(conflicts: MergeConflict[]): void {
     if (this.disposed) return;
-    this.latest = conflicts;
     const grouped = conflicts.map((c) => this.groupOne(c));
     this.panel.webview.html = this.renderHtml(grouped);
   }
@@ -119,7 +117,10 @@ export class ConflictPanel {
               }
             }
             const renderContent = (lines: string[]): string => {
-              if (lines.length === 0 && padTo === 0) return "(removed)";
+              // a genuinely empty version means this branch removed the
+              // region — label it as such regardless of padTo, instead of
+              // padding it out to "(no content)" lines that read like a bug.
+              if (lines.length === 0) return "(removed)";
               let body = lines.join("\n");
               if (lines.length < padTo) {
                 const pad = Array(padTo - lines.length).fill("(no content)").join("\n");
@@ -154,9 +155,12 @@ export class ConflictPanel {
                 `;
               })
               .join("");
+            const rangeLabel = c.base_start === c.base_end
+              ? `Line ${c.base_start + 1}`
+              : `Lines ${c.base_start + 1}–${c.base_end}`;
             return `
               <section class="conflict">
-                <h2>Lines ${c.base_start + 1}-${c.base_end}</h2>
+                <h2>${rangeLabel}</h2>
                 ${branchesHtml}
               </section>
             `;

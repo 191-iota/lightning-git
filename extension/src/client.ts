@@ -134,30 +134,6 @@ export class LightningGitClient {
     }
   }
 
-  async getMergeConflicts(projectId: string, userId: string, fileName: string): Promise<MergeConflict[]> {
-    try {
-      const encodedFile = fileName.split("/").map(encodeURIComponent).join("/");
-      const response = await this.http.get(`/api/merge/${projectId}/${encodedFile}`, {
-        params: { user_id: userId },
-      });
-      return response.data as MergeConflict[];
-    } catch {
-      return [];
-    }
-  }
-
-  // Read committed content at origin/{branch}:{path}. used as the base for
-  // client-side live overlay-vs-overlay conflict synthesis so we dont have
-  // to wait for the 60s merge poll to see a teammate's live divergence.
-  async getFileAtBranch(projectId: string, branch: string, path: string): Promise<string> {
-    const response = await this.http.get<string>(`/api/projects/${projectId}/file`, {
-      params: { branch, path },
-      responseType: "text",
-      transformResponse: [(v) => v],
-    });
-    return response.data ?? "";
-  }
-
   // Notbremse. Resets the caller's overlay state on the server back to the
   // committed branch state. Returns the number of file overlays affected.
   async wipeMyOverlay(projectId: string): Promise<number> {
