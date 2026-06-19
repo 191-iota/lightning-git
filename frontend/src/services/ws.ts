@@ -1,4 +1,4 @@
-import type { Comment } from "@/types/api";
+import type { Comment, MergeConflict } from "@/types/api";
 
 export interface OverlayUserView {
   user_id: string;
@@ -15,7 +15,8 @@ export type WsMessage =
   | { kind: "overlay"; user_id: string; content: string; line_section: [number, number] }
   | { kind: "comment_created"; id: string; user_id: string; line: number; text: string; created_at: number }
   | { kind: "comment_deleted"; id: string }
-  | { kind: "snapshot"; comments: Comment[]; all_user_contents: OverlayUserView[] };
+  | { kind: "snapshot"; comments: Comment[]; all_user_contents: OverlayUserView[] }
+  | { kind: "conflicts"; file: string; conflicts: MergeConflict[] };
 
 export interface OverlayWsOpts {
   projectId: string;
