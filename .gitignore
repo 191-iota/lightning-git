@@ -1,0 +1,8 @@
+# Root ignores only. Each package keeps its own .gitignore under its subfolder
+# (backend/.gitignore, frontend/.gitignore, extension/.gitignore) which already
+# cover target/, node_modules/, dist/, out/, .env, *.vsix and the like.
+
+.DS_Store
+*.log
+.idea/
+*.swp
