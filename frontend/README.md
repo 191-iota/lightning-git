@@ -2,14 +2,14 @@
 
 ![Vue 3](https://img.shields.io/badge/Vue%203-1a1a1a?style=flat-square&logo=vuedotjs&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-1a1a1a?style=flat-square&logo=typescript&logoColor=white) ![Vite](https://img.shields.io/badge/Vite-1a1a1a?style=flat-square&logo=vite&logoColor=white) ![live](https://img.shields.io/badge/live-lightning--git.com-9b2c2c?style=flat-square)
 
-The Vue web surface for Lightning Git: a dashboard that renders the same realtime overlay data as the editor extension, plus the organization and project management screens and the public landing and pricing pages.
+The Vue web surface for Lightning Git: a dashboard that renders the same realtime overlay data as the editor extension, plus the organization and project management screens.
 
-Lightning Git is a realtime visibility layer on top of Git. Between the moment a developer writes code and the moment they commit, nobody else can see the work in progress — Git deals in commits, not in the stream of edits between them. Lightning Git mirrors a repository read-only, holds each person's in-flight edits as ephemeral overlay state in the backend's RAM, and streams that state to the rest of the team. It is a Swiss HF diploma-thesis prototype. Live at [lightning-git.com](https://lightning-git.com).
+Lightning Git is a realtime visibility layer on top of Git. Between the moment a developer writes code and the moment they commit, nobody else can see the work in progress — Git deals in commits, not in the stream of edits between them. Lightning Git mirrors a repository read-only, holds each person's in-flight edits as ephemeral overlay state in the backend's RAM, and streams that state to the rest of the team. It is an early-stage, self-hostable project. Live at [lightning-git.com](https://lightning-git.com).
 
 The product is three repositories against one backend:
 
 - [lightning-git-backend](https://github.com/191-iota/lightning-git-backend) (Rust / actix-web) — owns the read-only repo clones, the in-RAM overlay state, the WebSocket realtime layer, and merge-conflict prediction.
-- `lightning-git-frontend` (this repo, Vue 3 + TypeScript + Vite + Pinia) — the web dashboard plus org/project management and the public marketing pages.
+- `lightning-git-frontend` (this repo, Vue 3 + TypeScript + Vite + Pinia) — the web dashboard plus org/project management.
 - [lightning-git-vsc](https://github.com/191-iota/lightning-git-vsc) (VS Code extension, TypeScript) — the developer surface inside the editor.
 
 <p align="center">
@@ -20,7 +20,7 @@ The product is three repositories against one backend:
 
 The extension lives where developers work, so a developer already sees teammates' edits and predicted conflicts in their own editor. But not everyone on a team opens VS Code. A Scrum Master, a Product Owner, or anyone coordinating the work needs the same live picture: who is editing which file right now, where two branches are diverging, what comments sit on which line, all without installing an editor or touching a repository. The web app renders exactly that. It reads the same activity and overlay streams the extension reads and projects them into a browser dashboard, so a non-coding stakeholder watches the live state of the code without ever cloning it.
 
-Projects, organizations, and members are created and managed here, not in the extension; the extension only links to a project that already exists by matching the git remote. So this repo is both the read-only window for stakeholders and the management console for the whole product, and it carries the public landing and pricing pages on top.
+Projects, organizations, and members are created and managed here, not in the extension; the extension only links to a project that already exists by matching the git remote. So this repo is both the read-only window for stakeholders and the management console for the whole product.
 
 ## How the realtime layer is wired
 
@@ -49,10 +49,11 @@ export type WsMessage =
   | { kind: "overlay"; user_id: string; content: string; line_section: [number, number] }
   | { kind: "comment_created"; id: string; user_id: string; line: number; text: string; created_at: number }
   | { kind: "comment_deleted"; id: string }
-  | { kind: "snapshot"; comments: Comment[]; all_user_contents: OverlayUserView[] };
+  | { kind: "snapshot"; comments: Comment[]; all_user_contents: OverlayUserView[] }
+  | { kind: "conflicts"; file: string; conflicts: MergeConflict[] };
 ```
 
-The `snapshot` message arrives on subscribe and seeds both the existing comments and the current teammate contents in one shot, so there is no HTTP follow-up to populate the view.
+The `snapshot` message arrives on subscribe and seeds both the existing comments and the current teammate contents in one shot, so there is no HTTP follow-up to populate the view. The `conflicts` message carries the backend's predicted-conflict set for the file; the backend pushes it on connect and again after every edit, and the view replaces its whole set on each one.
 
 ## Client-side overlay projection
 
@@ -60,17 +61,15 @@ The `snapshot` message arrives on subscribe and seeds both the existing comments
   <img src="assets/conflict-prediction.png" alt="The conflict algorithm this view ports from the backend: per-source diffs against main, clustered, judged by whether the sources disagree" width="860">
 </p>
 
-The live file view does not just paint the raw text of each teammate. It projects every contributor's content into a per-line view and computes a live conflict set, then merges that with the backend's authoritative answer.
+The live file view does not just paint the raw text of each teammate. It projects every contributor's content into a per-line view for attribution, and renders the predicted-conflict set the backend pushes over the WebSocket.
 
 `utils/overlay.ts` `computeProjectedLines` runs an LCS diff (`diffArrays` from the `diff` package) of each user's content against the base, so a single inserted line does not cascade-tag every line below it as that user's edit. Lines are tagged last-writer-wins but prefer the most recent non-empty contributor, because otherwise one teammate clearing their whole file would blank the projection for everyone. Pure deletions are surfaced as untagged base lines so the viewer still sees the file's structure rather than a hole.
 
-`utils/merge.ts` is a direct port of the backend's conflict algorithm. `computeCombinedDiff` and `computeConflicts` decompose each source's line diff against `origin/main` into hunks, group overlapping base-line ranges, and drop any group that has fewer than two distinct sources or whose hunks all make the identical edit. `flattenConflicts(live, backend)` treats the backend's result as a superset and keeps a live-only conflict only at a range the backend's last poll did not cover. Because the live pass and the backend run the same algorithm, the two results line up at overlapping ranges, so the backend's slower answer slots in without flicker. The frontend gets sub-second feedback between polls without diverging from the server.
+Conflict prediction itself is not done here. The backend recomputes the conflict set on every overlay edit and pushes it over the per-file socket as a `conflicts` message, and the view renders that set directly. An earlier build hand-ported the Rust algorithm into `utils/merge.ts` and fused a local pass with a slower poll; that port is gone, which removes a whole class of client/server drift and the chore of keeping two copies of the algorithm in step.
 
-The conflict poll hits `/api/merge/{projectId}/{encodedFilePath}` every 60 seconds with an in-flight guard and a stale-file check, so a poll that returns after the user switched files is discarded. The base content for the diff is fetched from `origin/main` (`branch=main`), not the user's feature branch, so the client and backend diff against the same merge target. `mergeConflicts` is a `shallowRef` because the response is a wholesale-replaced JSON array, and deep-proxying every hunk on each 60 s tick caused page hitches. Rendering is capped at `MAX_RENDERED_LINES = 1500` to avoid freezing on huge files, while conflict detection still runs over the full content.
+`mergeConflicts` is a `shallowRef` because each `conflicts` message carries the whole set and replaces the previous one wholesale, and deep-proxying every hunk on each push caused page hitches. The replacement is outright, with no client-side union or fallback, so a conflict the backend has resolved simply drops off on the next message rather than lingering. Rendering is capped at `MAX_RENDERED_LINES = 1500` to avoid freezing on huge files, while the backend still computes conflicts over the full content.
 
 Per-user colors are assigned by position, not by hashing. `OverlayView` builds `knownUserIds` as a sorted array of every id seen in overlays, comments, and the current user, and `colorIndex(userId)` returns the array index modulo the palette length, with a char-hash fallback only for an id not yet in the set. Five users get five distinct colors, which a plain hash-mod could not guarantee on a small population, and the result is stable across reloads.
-
-This algorithm lives in three places (the Rust backend, `utils/merge.ts` here, and `liveConflicts.ts` in the extension), and only the Rust variant has tests, so drift between the ports would not be caught automatically.
 
 ## Auth and the refresh interceptor
 
@@ -82,12 +81,11 @@ The refresh itself is single-flight. `auth.ts` `refresh()` guards with a module-
 
 ## Routes
 
-The router (`src/router/index.ts`) splits into public marketing pages, guest-only auth pages, and authenticated app pages scoped under an organization.
+The router (`src/router/index.ts`) splits into guest-only auth pages and authenticated app pages scoped under an organization; the root path redirects into the app.
 
 | path | name | view | meta | purpose |
 |------|------|------|------|---------|
-| `/` | landing | `LandingView.vue` | — | public marketing landing page |
-| `/pricing` | pricing | `PricingView.vue` | — | public pricing + FAQ |
+| `/` | — | redirect → `dashboard` | — | root redirects into the app |
 | `/login` | login | `LoginView.vue` | `requiresGuest` | sign in |
 | `/register` | register | `RegisterView.vue` | `requiresGuest` | sign up |
 | `/orgs` | orgs | `OrgListView.vue` | `requiresAuth` | list / select organizations |
@@ -148,10 +146,10 @@ The failing test is `computeProjectedLines > 'only tags the deleted region, not 
 ```
 src/
   views/        route components incl. OverlayView (live file), ProjectView (Kanban),
-                Landing/Pricing marketing pages, org & project management screens
+                auth, org & project management screens
   stores/       five Pinia stores: auth, org, project, activity, toast
   services/     api.ts (axios + refresh interceptor), ws.ts (per-file OverlayWebSocket)
-  utils/        overlay.ts (projection, LCS diff), merge.ts (conflict algorithm port)
+  utils/        overlay.ts (projection, LCS diff)
   components/   NavBar, FileTreeNode, dialogs, ToastHost, TabStrip, icons
   router/       route table + the auth/guest/org guard
   types/        shared API types
@@ -159,11 +157,9 @@ src/
 
 ## Scope and limitations
 
-This is a diploma-thesis prototype built under a fixed time budget, not production software, and a few things are deferred on purpose.
+This is an early-stage prototype, not production software, and a few things are deferred on purpose.
 
-The conflict algorithm is ported by hand into `utils/merge.ts` from the Rust backend, and only the Rust copy is tested, so a divergence between the two would not be caught. Conflicts and comments use a 60-second poll for the authoritative answer while live overlays already arrive over WebSocket; moving both fully to push would cut latency. Comments in the backend are in-memory only and are lost on restart. The backend keeps overlay state in a single in-memory instance with an in-process broadcast, so running more than one backend would need shared state. The backend's CORS is hard-wired to the localhost dev origin and would need to be environment-driven for a real deployment, and the WebSocket connect path on the backend checks a valid JWT but does not verify project membership on the socket itself.
-
-The pricing tiers on `PricingView` (Free CHF 0 for public repos and up to 3 projects, Team CHF 4 with private repos and unlimited projects, Organization CHF 8 with a self-hosted option) are forward-looking product framing; the page states plainly that Lightning Git is a research prototype developed as a Swiss HF diploma project.
+Conflict prediction now lives only in the Rust backend; this app renders the conflict set pushed over the WebSocket, so there is no ported copy to drift. Live overlays, predicted conflicts, and comments all arrive over the WebSocket. Comments in the backend are in-memory only and are lost on restart. The backend keeps overlay state in a single in-memory instance with an in-process broadcast, so running more than one backend would need shared state. The backend's CORS is hard-wired to the localhost dev origin and would need to be environment-driven for a real deployment, and the WebSocket connect path on the backend checks a valid JWT but does not verify project membership on the socket itself.
 
 ---
 

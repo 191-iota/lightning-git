@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHistory, type RouteLocationNormalized } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useOrgStore } from "@/stores/org";
 
@@ -6,9 +6,11 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
+      // no public landing page in the self-hosted app: send the root straight
+      // into the app. the guard below bounces an unauthenticated visitor to
+      // login and an authenticated one with no org selected to /orgs.
       path: "/",
-      name: "landing",
-      component: () => import("@/views/LandingView.vue"),
+      redirect: { name: "dashboard" },
     },
     {
       path: "/login",
@@ -73,7 +75,8 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach((to) => {
+// exported so the guard can be unit-tested without driving a full navigation.
+export function navigationGuard(to: RouteLocationNormalized) {
   const authStore = useAuthStore();
   const orgStore = useOrgStore();
   if (to.meta.requiresAuth && !authStore.isAuthenticated) return { name: "login" };
@@ -81,6 +84,8 @@ router.beforeEach((to) => {
   // dashboard etc. need an org picked first
   if (to.meta.requiresOrg && !orgStore.currentOrgId) return { name: "orgs" };
   return true;
-});
+}
+
+router.beforeEach(navigationGuard);
 
 export default router;
