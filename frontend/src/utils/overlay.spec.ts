@@ -99,6 +99,25 @@ describe("computeProjectedLines", () => {
     expect(lines[2]).toEqual({ text: "C", userId: "u2" });
   });
 
+  it("tags an inserted line with the user who added it", () => {
+    // a brand-new line with no base counterpart is owned by its author.
+    const overlays = [userView("u1", "a\nb\nNEW\nc")];
+    const lines = computeProjectedLines("a\nb\nc", overlays);
+    const inserted = lines.find((l) => l.text === "NEW");
+    expect(inserted).toEqual({ text: "NEW", userId: "u1" });
+  });
+
+  it("last NON-EMPTY writer wins so a teammate deleting a line can't blank another's edit", () => {
+    // u1 edits line b; u2 deletes line b. Both land on the same base line, so
+    // last-writer-wins would show u2's empty deletion and blank the line.
+    // Instead the projection skips the empty writer and keeps u1's content.
+    const overlays = [userView("u1", "a\nALICE\nc"), userView("u2", "a\nc")];
+    const lines = computeProjectedLines("a\nb\nc", overlays);
+    expect(lines.map((l) => l.text)).toContain("ALICE");
+    const alice = lines.find((l) => l.text === "ALICE");
+    expect(alice?.userId).toBe("u1");
+  });
+
   it("extends past the base when an overlay adds new lines", () => {
     const overlays = [userView("u1", "a\nb\nc\nd")];
     const lines = computeProjectedLines("a\nb\nc", overlays);
@@ -127,12 +146,19 @@ describe("computeProjectedLines", () => {
     expect(lines[5].userId).toBeUndefined();
   });
 
-  it("only tags the deleted region, not the lines that shifted up", () => {
-    // user removes line 3 from the base
+  it("keeps a purely-deleted base line as an untagged base line (deletions don't drop structure)", () => {
+    // user removes line 3 ("c") from the base. by deliberate design the
+    // projection does NOT drop the deleted line: a pure deletion would
+    // otherwise wipe content out of the viewer's structure. instead the
+    // deleted base line is retained verbatim and left untagged, so the
+    // viewer keeps the file's shape; the conflict panel surfaces the
+    // deletion contributors separately.
     const overlays = [userView("u1", "a\nb\nd\ne")];
     const lines = computeProjectedLines("a\nb\nc\nd\ne", overlays);
-    expect(lines.map((l) => l.text)).toEqual(["a", "b", "d", "e"]);
-    expect(lines[2].userId).toBeUndefined();
-    expect(lines[3].userId).toBeUndefined();
+    expect(lines.map((l) => l.text)).toEqual(["a", "b", "c", "d", "e"]);
+    // the retained deleted line is untagged (no user owns base content)...
+    expect(lines[2]).toEqual({ text: "c", liveContributors: undefined });
+    // ...and so are the lines around it that merely shifted.
+    expect(lines.every((l) => l.userId === undefined)).toBe(true);
   });
 });
