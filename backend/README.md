@@ -10,7 +10,7 @@ Lightning Git is a realtime visibility layer on top of Git. A team keeps committ
 - [lightning-git-frontend](https://github.com/191-iota/lightning-git-frontend) — Vue 3 + TypeScript + Vite + Pinia. The web dashboard for the whole team, including non-coding stakeholders like a Scrum Master.
 - [lightning-git-vsc](https://github.com/191-iota/lightning-git-vsc) — the VS Code extension, the developer's surface inside the editor.
 
-Live at [lightning-git.com](https://lightning-git.com). It is an HF diploma-thesis prototype, so read the scope section before treating any of this as production software.
+Live at [lightning-git.com](https://lightning-git.com). It is an early-stage, self-hostable project, so read the scope section before treating any of this as production software.
 
 <p align="center">
   <img src="assets/conflict-live.gif" alt="Two developers edit the same line; the conflict is detected live, before any commit, then cleared by the Notbremse" width="780">
@@ -48,7 +48,7 @@ Git has no concept of a conflict until you merge. This backend detects one while
 
 Two rules decide whether a cluster is actually a conflict. The source set is built as a `HashSet` of `(branch, user_id)` rather than just `branch`, so two people editing the *same* branch with divergent live content count as two distinct sources and conflict with each other — the most common real-time collision, and one that committed-git diffing can never see. A cluster needs at least two distinct sources to survive. Then `hunk_signature` returns `(base_start, base_end, &content)`, and if every hunk in the cluster shares the first one's signature the cluster is dropped, because two branches that made the identical edit will merge cleanly and git would auto-resolve it anyway.
 
-The whole thing is exposed as a poll: `GET /api/merge/{project_id}/{file_name}`, gated by project membership. The same call also refreshes each overlay's cached base from the fresh `main` read it just did and re-broadcasts the activity snapshot, reusing the unavoidable fetch instead of paying for a second round-trip. The handler runs its overlay-existence check inside an explicit scope so the `DashMap` read guards drop before the `.await`, because `refresh_overlay_base` takes a write guard on the same shard and a held read guard across the await would deadlock against it.
+Conflicts are pushed, not polled. The backend recomputes `calculate_live_diff` when a client connects and again on every overlay edit, and broadcasts the result as `WsBroadcast::Conflicts { file, conflicts }` over the same per-file overlay WebSocket the edits already flow through, so a client renders the fresh set without asking for it and replaces its whole conflict list on each message. The recompute also refreshes each overlay's cached base from the fresh `main` read it just did and re-broadcasts the activity snapshot, reusing the unavoidable fetch instead of paying for a second round-trip. Each call site `.await`s `calculate_live_diff` with no `DashMap` guard held, because it takes a write guard on the same shard via `refresh_overlay_base` and a guard held across the await would deadlock against it — the same trap the old merge endpoint had to document.
 
 ## The overlay model
 
@@ -143,16 +143,15 @@ One honest gap: the two WebSocket handlers, `ws_overlay_stream` and `ws_project_
 
 ## Routes
 
-Thirty-eight routes total: thirty-two under the JWT-protected `/api` scope, six anonymous. The realtime and overlay surface:
+Thirty-seven routes total: thirty-one under the JWT-protected `/api` scope, six anonymous. The realtime and overlay surface:
 
 | Method | Path | Handler |
 |---|---|---|
 | GET | `/api/projects/{id}/activity/ws` | `ws_project_activity` (WebSocket) |
-| GET | `/api/overlay/ws/{project_id}/{user_id}/{file_name:.*}` | `ws_overlay_stream` (WebSocket) |
+| GET | `/api/overlay/ws/{project_id}/{user_id}/{file_name:.*}` | `ws_overlay_stream` (WebSocket; pushes overlay edits and predicted conflicts) |
 | GET | `/api/overlay/{project_id}/{user_id}/{file_name:.*}` | `get_overlay` (snapshot) |
 | PUT | `/api/overlay/{project_id}/{user_id}/{file_name:.*}` | `create_active_overlay` (branch via `?branch=`) |
 | DELETE | `/api/overlay/me/{proj_id}` | `wipe_my_overlay` (Notbremse) |
-| GET | `/api/merge/{project_id}/{file_name:.*}` | `get_merge_conflicts` |
 
 The rest cover projects, tasks, organizations, members, and the file tree. The anonymous scope is `/health`, `/register`, `/login`, `/refresh`, and the two GitHub OAuth callbacks. The full set is in `src/routes/global_routes.rs`, and Swagger UI serves a live copy at `/swagger/` with the spec at `/api-doc/openapi.json`.
 
@@ -228,8 +227,8 @@ src/
 
 ## Scope
 
-This is a diploma-thesis prototype built under a fixed time budget, not production software, and several things are deferred on purpose. Overlay state lives in an in-memory DashMap on a single instance and the broadcast is in-process, so running more than one backend would need shared state and cross-instance fan-out, for example via Redis Pub/Sub. The cloned repo is ephemeral in the container and re-fetched on every deploy, which slows cold start for large or numerous repos; a persistent volume would help.
+This is an early-stage prototype, not production software, and several things are deferred on purpose. Overlay state lives in an in-memory DashMap on a single instance and the broadcast is in-process, so running more than one backend would need shared state and cross-instance fan-out, for example via Redis Pub/Sub. The cloned repo is ephemeral in the container and re-fetched on every deploy, which slows cold start for large or numerous repos; a persistent volume would help.
 
-The conflict algorithm exists three times — the Rust original here, a TypeScript port in the frontend's `utils/merge.ts`, and another in the extension's `liveConflicts.ts` — but only the Rust version has tests, so drift between the ports would go uncaught. CORS is hard-wired as noted above. There is no error tracking like Sentry and no automated CI running the tiers on push; logging is plaintext to stdout via `env_logger` and the Actix `Logger`. Overlay content is protected in transit by TLS but sits in plaintext in backend RAM; application-level encryption is planned, not built. There is no rate limiting on public endpoints and no secret-rotation strategy. Conflicts and comments are still fetched by the clients over a poll while live edits already push over WebSocket, and moving both fully to push would cut latency.
+The conflict algorithm lives in exactly one place now, this Rust backend: the frontend and the extension render the conflict set the backend pushes over the WebSocket instead of re-deriving it, so the two hand-ported copies that used to drift are gone. CORS is hard-wired as noted above. There is no error tracking like Sentry and no automated CI running the tiers on push; logging is plaintext to stdout via `env_logger` and the Actix `Logger`. Overlay content is protected in transit by TLS but sits in plaintext in backend RAM; application-level encryption is planned, not built. There is no rate limiting on public endpoints and no secret-rotation strategy. Live edits, predicted conflicts, and comments now all push over the per-file WebSocket; the earlier conflict poll is gone.
 
-The forward-looking pricing on [lightning-git.com](https://lightning-git.com) describes where the product could go; the running prototype is the read-only mirror, the in-RAM overlays, the realtime layer, conflict prediction, the Notbremse, multi-tenant isolation, GitHub OAuth for private repos, and the 63 passing backend tests.
+What runs today is the read-only mirror, the in-RAM overlays, the realtime layer, conflict prediction, the Notbremse, multi-tenant isolation, GitHub OAuth for private repos, and the backend test suite across four tiers.
