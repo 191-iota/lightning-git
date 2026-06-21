@@ -210,7 +210,6 @@ async function deleteOrg() {
 <template>
   <div class="min-h-screen bg-lg-bg text-lg-text">
     <NavBar>
-      <RouterLink to="/pricing" class="lg-link">Pricing</RouterLink>
       <RouterLink to="/orgs" class="lg-link">Switch org</RouterLink>
       <span class="text-lg-text-muted hidden sm:inline">{{ auth.user?.email }}</span>
       <button class="lg-link" @click="onLogout">Sign out</button>
