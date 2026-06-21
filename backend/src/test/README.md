@@ -1,4 +1,4 @@
-# Lightning Git — Test Concept
+# Lightning Git, Test Concept
 
 ## Purpose
 

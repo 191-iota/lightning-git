@@ -270,8 +270,7 @@ pub async fn ws_overlay_stream(
                 }
             }
         }
-        // stream ended. intentionally DON'T remove user_contents here —
-        // the same user_id often has multiple concurrent connections
+        // stream ended. intentionally DON'T remove user_contents here        // the same user_id often has multiple concurrent connections
         // (web viewer + VSC editor at minimum), and removing on the
         // first WS close wipes data the user's other sessions are still
         // actively using. entries get refreshed by the next createOverlay

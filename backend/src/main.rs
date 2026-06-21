@@ -285,7 +285,7 @@ async fn init_app_state() -> AppState {
 
 fn init_supabase_db_client() -> SupabaseClient {
     // The backend is a trusted server, so its DB client must use the SERVICE_ROLE
-    // key. RLS on `profiles` only grants SELECT to anon — writes (e.g. storing the
+    // key. RLS on `profiles` only grants SELECT to anon, writes (e.g. storing the
     // GitHub token) require service_role, otherwise the UPDATE silently affects 0 rows.
     supabase_rs::SupabaseClient::new(
         env::var("SUPABASE_URL").expect("Could not find SUPABASE_URL"),

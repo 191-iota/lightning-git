@@ -53,7 +53,7 @@ pub async fn maybe_fetch(path: &Path) -> Result<(), LGitIoError> {
     }
     let lock = fetch_lock_for(path);
     let _guard = lock.lock().await;
-    // recheck after acquiring the lock — somebody else may have just fetched.
+    // recheck after acquiring the lock, somebody else may have just fetched.
     if let Some(t) = LAST_FETCH.get(path) {
         if t.elapsed() < FETCH_TTL {
             return Ok(());

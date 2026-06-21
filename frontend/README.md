@@ -1,16 +1,16 @@
 # lightning-git-frontend
 
-![Vue 3](https://img.shields.io/badge/Vue%203-1a1a1a?style=flat-square&logo=vuedotjs&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-1a1a1a?style=flat-square&logo=typescript&logoColor=white) ![Vite](https://img.shields.io/badge/Vite-1a1a1a?style=flat-square&logo=vite&logoColor=white) ![live](https://img.shields.io/badge/live-lightning--git.com-9b2c2c?style=flat-square)
+![Vue 3](https://img.shields.io/badge/Vue%203-1a1a1a?style=flat-square&logo=vuedotjs&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-1a1a1a?style=flat-square&logo=typescript&logoColor=white) ![Vite](https://img.shields.io/badge/Vite-1a1a1a?style=flat-square&logo=vite&logoColor=white) ![self-hosted](https://img.shields.io/badge/self--hosted-9b2c2c?style=flat-square)
 
 The Vue web surface for Lightning Git: a dashboard that renders the same realtime overlay data as the editor extension, plus the organization and project management screens.
 
-Lightning Git is a realtime visibility layer on top of Git. Between the moment a developer writes code and the moment they commit, nobody else can see the work in progress — Git deals in commits, not in the stream of edits between them. Lightning Git mirrors a repository read-only, holds each person's in-flight edits as ephemeral overlay state in the backend's RAM, and streams that state to the rest of the team. It is an early-stage, self-hostable project. Live at [lightning-git.com](https://lightning-git.com).
+Lightning Git is a realtime visibility layer on top of Git. Between the moment a developer writes code and the moment they commit, nobody else can see the work in progress, Git deals in commits, not in the stream of edits between them. Lightning Git mirrors a repository read-only, holds each person's in-flight edits as ephemeral overlay state in the backend's RAM, and streams that state to the rest of the team. It is an early-stage, self-hostable project. [lightning-git.com](https://lightning-git.com) serves only the landing page; there is no public instance, you host it yourself.
 
 The product is three repositories against one backend:
 
-- [lightning-git-backend](https://github.com/191-iota/lightning-git-backend) (Rust / actix-web) — owns the read-only repo clones, the in-RAM overlay state, the WebSocket realtime layer, and merge-conflict prediction.
-- `lightning-git-frontend` (this repo, Vue 3 + TypeScript + Vite + Pinia) — the web dashboard plus org/project management.
-- [lightning-git-vsc](https://github.com/191-iota/lightning-git-vsc) (VS Code extension, TypeScript) — the developer surface inside the editor.
+- [lightning-git-backend](../backend) (Rust / actix-web): owns the read-only repo clones, the in-RAM overlay state, the WebSocket realtime layer, and merge-conflict prediction.
+- `lightning-git-frontend` (this repo, Vue 3 + TypeScript + Vite + Pinia): the web dashboard plus org/project management.
+- [lightning-git-vsc](../extension) (VS Code extension, TypeScript): the developer surface inside the editor.
 
 <p align="center">
   <img src="assets/system.png" alt="One backend, two surfaces: this web dashboard and the VS Code extension over the Rust backend, with a read-only git mirror and a Supabase metadata store" width="900">
@@ -85,7 +85,7 @@ The router (`src/router/index.ts`) splits into guest-only auth pages and authent
 
 | path | name | view | meta | purpose |
 |------|------|------|------|---------|
-| `/` | — | redirect → `dashboard` | — | root redirects into the app |
+| `/` |, | redirect → `dashboard` |, | root redirects into the app |
 | `/login` | login | `LoginView.vue` | `requiresGuest` | sign in |
 | `/register` | register | `RegisterView.vue` | `requiresGuest` | sign up |
 | `/orgs` | orgs | `OrgListView.vue` | `requiresAuth` | list / select organizations |
@@ -103,17 +103,17 @@ The guard (`router.beforeEach`) is three rules: a `requiresAuth` route redirects
 
 State lives in five stores under `src/stores/`:
 
-- `auth` — user, token, and refreshToken hydrated from `localStorage`; `isAuthenticated`; `login` / `register` / `logout`; the single-flight `refresh` registered into the api layer via `onUnauthorized`.
-- `org` — the org list and `currentOrgId` (persisted under `currentOrgId`); fetch / create / rename / `transferOwnership` / remove / select / clear; member management; `roleIn(orgId)` returning `'owner' | 'member' | null`.
-- `project` — projects, current project, tasks, and members; fetch and CRUD; `wipeMyOverlays` (the Notbremse); `setTaskArchived` / `setTaskColumn`; `myRole` returning `'admin' | 'member' | null`.
-- `activity` — the shared project-wide WebSocket described above, exposing `edits`, a `state` of `'closed' | 'connecting' | 'live'`, `ensure(projectId)`, and `dispose()`.
-- `toast` — the toast list with `push` / `dismiss` plus `info` / `success` / `error` helpers, default TTL 4500 ms.
+- `auth`: user, token, and refreshToken hydrated from `localStorage`; `isAuthenticated`; `login` / `register` / `logout`; the single-flight `refresh` registered into the api layer via `onUnauthorized`.
+- `org`: the org list and `currentOrgId` (persisted under `currentOrgId`); fetch / create / rename / `transferOwnership` / remove / select / clear; member management; `roleIn(orgId)` returning `'owner' | 'member' | null`.
+- `project`: projects, current project, tasks, and members; fetch and CRUD; `wipeMyOverlays` (the Notbremse); `setTaskArchived` / `setTaskColumn`; `myRole` returning `'admin' | 'member' | null`.
+- `activity`: the shared project-wide WebSocket described above, exposing `edits`, a `state` of `'closed' | 'connecting' | 'live'`, `ensure(projectId)`, and `dispose()`.
+- `toast`: the toast list with `push` / `dismiss` plus `info` / `success` / `error` helpers, default TTL 4500 ms.
 
 ## The board and the Notbremse
 
 The Kanban board (`ProjectView`) tracks branches as tasks across four columns (`todo`, `in_progress`, `review`, `merged`), dragged with `vuedraggable`. Remote branches register as tasks automatically; columns are moved by hand. Archiving toggles via `PATCH /api/tasks/{id}/archive` and a column move via `PATCH /api/tasks/{id}/column`.
 
-The Notbremse (kept as the German coinage for "emergency brake") resets the calling user's in-flight overlays in a project back to the committed git base, via `DELETE /api/overlay/me/{projectId}`. It affects only the caller's own overlays and is gated server-side by project membership. Its reason for existing is credential safety: if a secret lands in a live edit, one click discards that user's uncommitted typing across every file at once. It is a reactive control — it only helps if the user notices, and it cannot recall edits that already streamed out to teammates before the wipe.
+The Notbremse (kept as the German coinage for "emergency brake") resets the calling user's in-flight overlays in a project back to the committed git base, via `DELETE /api/overlay/me/{projectId}`. It affects only the caller's own overlays and is gated server-side by project membership. Its reason for existing is credential safety: if a secret lands in a live edit, one click discards that user's uncommitted typing across every file at once. It is a reactive control, it only helps if the user notices, and it cannot recall edits that already streamed out to teammates before the wipe.
 
 ## Local development
 
@@ -133,11 +133,11 @@ The backend's CORS in the prototype hard-wires `http://localhost:5173`, so the d
 | `VITE_API_BASE_URL` | `http://localhost:8080` | REST base for the axios client |
 | `VITE_WS_URL` | `ws://localhost:8080` | base for both the activity and per-file overlay sockets |
 
-Run the [lightning-git-backend](https://github.com/191-iota/lightning-git-backend) locally first; it exposes the `/api` routes and the two WebSocket endpoints this app connects to.
+Run the [lightning-git-backend](../backend) locally first; it exposes the `/api` routes and the two WebSocket endpoints this app connects to.
 
 ## Testing
 
-Tests run under Vitest with `@vue/test-utils` and `happy-dom` as the environment. There are 22 tests across two spec files: `src/utils/overlay.spec.ts` (15 — 6 for `buildTree`, 9 for `computeProjectedLines`) and `src/components/FileTreeNode.spec.ts` (7). Twenty-one pass and one fails on purpose.
+Tests run under Vitest with `@vue/test-utils` and `happy-dom` as the environment. There are 22 tests across two spec files: `src/utils/overlay.spec.ts` (15, 6 for `buildTree`, 9 for `computeProjectedLines`) and `src/components/FileTreeNode.spec.ts` (7). Twenty-one pass and one fails on purpose.
 
 The failing test is `computeProjectedLines > 'only tags the deleted region, not the lines that shifted up'`. It expects `['a','b','d','e']` but the implementation keeps the deleted line `c`, returning `['a','b','c','d','e']`, because `computeProjectedLines` surfaces pure deletions as untagged base lines so a stakeholder still sees the file's structure rather than a gap. The test is left red to mark that the deletion-projection behaviour is an open design question, not settled.
 
@@ -163,4 +163,4 @@ Conflict prediction now lives only in the Rust backend; this app renders the con
 
 ---
 
-Repositories live under [github.com/191-iota](https://github.com/191-iota): `lightning-git-backend`, `lightning-git-frontend`, `lightning-git-vsc`.
+The project lives in the [lightning-git](https://github.com/191-iota/lightning-git) monorepo as `backend/`, `frontend/`, and `extension/`.

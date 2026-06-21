@@ -30,7 +30,7 @@ interface PanelConflict {
 export class ConflictPanel {
   private readonly panel: vscode.WebviewPanel;
   // local disposal flag because the WebviewPanel's own dispose semantics
-  // are async — if reveal/update gets called between user-clicks-X and
+  // are async, if reveal/update gets called between user-clicks-X and
   // onDidDispose firing, calls on the underlying panel throw silently
   // and the session is left holding a dead reference. with this flag the
   // outer toggle path can detect and recreate.
@@ -118,7 +118,7 @@ export class ConflictPanel {
             }
             const renderContent = (lines: string[]): string => {
               // a genuinely empty version means this branch removed the
-              // region — label it as such regardless of padTo, instead of
+              // region, label it as such regardless of padTo, instead of
               // padding it out to "(no content)" lines that read like a bug.
               if (lines.length === 0) return "(removed)";
               let body = lines.join("\n");

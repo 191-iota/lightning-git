@@ -60,7 +60,7 @@ pub async fn create_project(
                 // No stored GitHub token: the user has not finished "Authorize on
                 // GitHub" yet, so a private repo will fail to clone below.
                 warn!(
-                    "No GitHub token for user {} — cloning {} unauthenticated (private repos will fail)",
+                    "No GitHub token for user {}, cloning {} unauthenticated (private repos will fail)",
                     &ext_data.user_id, &req.repo_url
                 );
                 req.repo_url.clone()
