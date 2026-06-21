@@ -48,7 +48,7 @@ async fn fake_auth(
     }
 }
 
-/// TF13: a user who is neither an org owner nor a project member is rejected.
+/// A user who is neither an org owner nor a project member is rejected.
 /// Supabase mock returns empty rows for both lookups -> permission_service
 /// returns Ok(false) -> require_project_permission! returns 401.
 #[actix_web::test]
@@ -89,7 +89,7 @@ async fn non_member_cannot_read_project() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// TF13 variant: the same non-member is also rejected on the tree endpoint.
+/// The same non-member is also rejected on the tree endpoint.
 /// Ensures permission checks aren't accidentally skipped on the read paths
 /// that drive the OverlayView sidebar.
 #[actix_web::test]
@@ -128,8 +128,8 @@ async fn non_member_cannot_list_project_tree() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// TF13 variant: missing user id from the test middleware short-circuits
-/// before reaching the handler. Sanity-checks the fake auth itself.
+/// A missing user id from the test middleware short-circuits before reaching
+/// the handler. Sanity-checks the fake auth itself.
 #[actix_web::test]
 async fn missing_test_user_id_short_circuits_to_401() {
     let state = web::Data::new(test_app_state_with_supabase("http://localhost"));
