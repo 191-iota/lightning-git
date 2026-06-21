@@ -118,6 +118,15 @@ export function computeProjectedLines(
   let i = 0;
 
   while (i < allChanges.length || baseIdx < baseLines.length) {
+    // Drop any change overtaken by a wider earlier one: when two users' ranges
+    // overlap, processing the wider range jumps baseIdx past a narrower range's
+    // start, leaving it behind the cursor. Its base region is already emitted,
+    // so skip it. Without this the loop can never reach `startBaseIdx === baseIdx`
+    // for the stranded change and spins forever once the base lines run out.
+    while (i < allChanges.length && allChanges[i].startBaseIdx < baseIdx) {
+      i++;
+    }
+
     const atIdx: UserChange[] = [];
     while (i < allChanges.length && allChanges[i].startBaseIdx === baseIdx) {
       atIdx.push(allChanges[i]);
