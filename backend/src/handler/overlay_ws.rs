@@ -15,6 +15,7 @@ use crate::model::overlay::extract_overlay;
 use crate::model::overlay::Comment;
 use crate::model::overlay::UserOverlayRes;
 use crate::model::overlay::WsBroadcast;
+use crate::service::merge_service;
 
 /// Project-wide activity WebSocket. Pushes a Vec<ActiveEdit> snapshot on
 /// connect and on every per-file change anywhere in the project.
@@ -147,6 +148,14 @@ pub async fn ws_overlay_stream(
 
     let echo_self = req.query_string().contains("echo=true");
 
+    // clones for the connect-time conflict seed computed inside the outbound
+    // task. done after the WS upgrade and after every DashMap guard from the
+    // snapshot block above has dropped, so calculate_live_diff's internal
+    // write guard cannot deadlock against a read guard held across an await.
+    let seed_state = state.clone();
+    let seed_file = file_name.clone();
+    let seed_project = project_id;
+
     // Server -> Client (Outbound)
     actix_web::rt::spawn(async move {
         // seed the client with the current comment list + active editors so
@@ -154,6 +163,28 @@ pub async fn ws_overlay_stream(
         if let Ok(text) = serde_json::to_string(&initial_snapshot) {
             if session.text(text).await.is_err() {
                 return;
+            }
+        }
+        // seed the predicted merge conflicts so the client renders them
+        // immediately instead of polling GET /api/merge. on Err (e.g. file is
+        // a draft not yet on main) we simply skip; no panic.
+        let base = seed_state.repo_loc.join(seed_project.to_string());
+        if let Ok(conflicts) = merge_service::calculate_live_diff(
+            seed_file.clone(),
+            seed_project,
+            seed_state.clone(),
+            &base,
+        )
+        .await
+        {
+            let msg = WsBroadcast::Conflicts {
+                file: seed_file.clone(),
+                conflicts,
+            };
+            if let Ok(text) = serde_json::to_string(&msg) {
+                if session.text(text).await.is_err() {
+                    return;
+                }
             }
         }
         loop {
@@ -205,6 +236,37 @@ pub async fn ws_overlay_stream(
                     .map(|p| p.activity_tx.clone());
                 if let Some(tx) = activity_tx {
                     let _ = tx.send(state_clone.compute_activity(&project_id));
+                }
+
+                // refresh_activity is true only for Overlay edits, which is
+                // exactly when conflicts can change. recompute and broadcast
+                // the fresh conflict set to every subscriber so clients no
+                // longer poll GET /api/merge.
+                //
+                // calculate_live_diff is awaited OUTSIDE any repo_states /
+                // overlays guard: it internally takes a write guard via
+                // refresh_overlay_base, so holding a read guard across this
+                // await would deadlock (the same trap get_merge_conflicts
+                // documented). only after it returns do we re-acquire the
+                // overlay in a fresh short scope to send. Conflicts is not
+                // self-filtered, so the editing client also receives it.
+                let base = state_clone.repo_loc.join(project_id.to_string());
+                if let Ok(conflicts) = merge_service::calculate_live_diff(
+                    file_name_clone.clone(),
+                    project_id,
+                    state_clone.clone(),
+                    &base,
+                )
+                .await
+                {
+                    if let Some(proj) = state_clone.repo_states.get(&project_id) {
+                        if let Some(overlay) = proj.overlays.get(&file_name_clone) {
+                            let _ = overlay.tx.send(WsBroadcast::Conflicts {
+                                file: file_name_clone.clone(),
+                                conflicts,
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -308,6 +370,8 @@ fn process_incoming(
             (Some(WsBroadcast::CommentDeleted { id }), false)
         }
         WsBroadcast::Snapshot { .. } => (None, false),
+        // server -> client only; ignore if a client ever sends it.
+        WsBroadcast::Conflicts { .. } => (None, false),
     }
 }
 
