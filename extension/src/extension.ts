@@ -1,9 +1,10 @@
 import * as vscode from "vscode";
-import axios from "axios";
 import { execFile } from "child_process";
 import { AuthManager } from "./auth";
 import { LightningGitClient } from "./client";
 import { OverlaySession } from "./overlaySession";
+import { normalizeGitUrl } from "./gitUrl";
+import { getErrorMessage } from "./errorMessage";
 
 let authManager: AuthManager;
 let client: LightningGitClient;
@@ -84,21 +85,6 @@ export function activate(context: vscode.ExtensionContext): void {
         resolve(err ? undefined : stdout.trim()),
       );
     });
-  }
-
-  // collapses every git URL form to just "owner/repo" so https on the web side
-  // matches ssh + ssh-config-alias on the local side. handles:
-  //   https://github.com/owner/repo.git
-  //   ssh://git@github.com/owner/repo.git
-  //   git@github.com:owner/repo.git
-  //   github-iota:owner/repo.git   (user's ~/.ssh/config Host alias)
-  function normalizeGitUrl(url: string): string {
-    const trimmed = url.replace(/\.git$/, "").trim().toLowerCase();
-    const urlMatch = trimmed.match(/^(?:https?|ssh):\/\/[^/]+\/(.+)$/);
-    if (urlMatch) return urlMatch[1];
-    const sshMatch = trimmed.match(/^(?:git@)?[^:/]+:(.+)$/);
-    if (sshMatch) return sshMatch[1];
-    return trimmed;
   }
 
   async function findProjectByRepoUrl(repoUrl: string): Promise<string | undefined> {
@@ -301,32 +287,4 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   overlaySession?.dispose();
-}
-
-function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError(error)) {
-    const status = error.response?.status;
-    const responseData = error.response?.data;
-    if (typeof responseData === "string" && responseData.trim()) {
-      return responseData.trim();
-    }
-    if (responseData && typeof responseData === "object") {
-      if ("error" in responseData && responseData.error) {
-        return String(responseData.error);
-      }
-      try {
-        return JSON.stringify(responseData);
-      } catch {
-        return status ? `Request failed with status ${status}` : error.message;
-      }
-    }
-    if (status) {
-      return `Request failed with status ${status}: ${error.message}`;
-    }
-    return error.message;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }

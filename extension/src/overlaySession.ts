@@ -8,26 +8,7 @@ import {
 } from "./client";
 import { ConflictPanel } from "./conflictPanel";
 import { conflictsEqual } from "./conflictsEqual";
-
-/// Tagged WS message matching the backend's WsBroadcast enum. All payloads
-/// (live typing, comment lifecycle, initial snapshot) flow through the
-/// per-file overlay channel.
-type WsMessage =
-  | { kind: "overlay"; user_id: string; content: string; line_section: [number, number] }
-  | { kind: "conflicts"; file: string; conflicts: MergeConflict[] }
-  | { kind: "comment_created"; id: string; user_id: string; line: number; text: string; created_at: number }
-  | { kind: "comment_deleted"; id: string }
-  | {
-      kind: "snapshot";
-      comments: Comment[];
-      all_user_contents: Array<{
-        user_id: string;
-        content: string;
-        edited_sections: [number, number];
-        updated_at_secs: number;
-        updated_at_nanos: number;
-      }>;
-    };
+import type { WsMessage } from "./parseWsMessage";
 
 type TeammateChange = {
   content: string;
