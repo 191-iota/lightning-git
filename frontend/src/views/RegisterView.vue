@@ -35,8 +35,7 @@ async function onSubmit() {
 
 <template>
   <div class="min-h-screen flex flex-col bg-lg-bg text-lg-text">
-    <NavBar brand-to="/pricing">
-      <RouterLink to="/pricing" class="lg-link">Pricing</RouterLink>
+    <NavBar>
       <RouterLink to="/login" class="lg-link">Log in</RouterLink>
     </NavBar>
 

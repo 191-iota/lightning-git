@@ -38,15 +38,16 @@ onMounted(() => {
   if (track && window.innerWidth > 1200) {
     const fill = track.querySelector(".track-fill") as HTMLElement | null;
     const sections = [
-      "hero", "stats", "problem", "features", "comparison",
-      "how", "principles", "upcoming", "contact",
+      "hero", "stats", "problem", "comparison", "wedge",
+      "features", "how", "principles", "upcoming", "contact",
     ];
     const labels: Record<string, string> = {
       hero: "what it is",
       stats: "why it matters",
-      problem: "what it replaces",
-      features: "what it does",
+      problem: "the problem",
       comparison: "why this tool",
+      wedge: "the core",
+      features: "also does",
       how: "how it works",
       principles: "constraints",
       upcoming: "roadmap",
@@ -100,20 +101,29 @@ onMounted(() => {
     window.addEventListener("resize", onResize);
   }
 
-  // stat counter animation
+  // stat counter animation. the markup already renders the real values
+  // (19% / 26x / 11%), so the count-up is pure progressive enhancement —
+  // a crawler, screenshot, or no-scroll visitor always sees the real
+  // number, never 0. the count-up plays when the band scrolls into view
+  // (threshold ~0.01 so it fires even if the band is already partly on
+  // screen at load).
   const counters = document.querySelectorAll(".lg-landing .counter");
   let countersDone = false;
+  function runCounters() {
+    if (countersDone) return;
+    countersDone = true;
+    counters.forEach((c) => animateCounter(c as HTMLElement));
+  }
   counterObs = new IntersectionObserver(
     (entries) => {
       entries.forEach((e) => {
-        if (e.isIntersecting && !countersDone) {
-          countersDone = true;
-          counters.forEach((c) => animateCounter(c as HTMLElement));
+        if (e.isIntersecting) {
+          runCounters();
           counterObs?.disconnect();
         }
       });
     },
-    { threshold: 0.3 },
+    { threshold: 0.01 },
   );
   counters.forEach((c) => counterObs!.observe(c));
 
@@ -301,12 +311,12 @@ async function copyEmail() {
             </svg>
           </div>
           <h1>
-            See your team's code.
+            Catch Git conflicts
             <br />
-            In real time.
+            before they reach a pull request.
           </h1>
           <p class="subheadline">
-            Lightning Git mirrors your repo, tracks who is editing what, and runs conflict detection against every active branch on demand.
+            Live, pre-merge conflict visibility over your real Git state, self-hosted and read-only, so nothing about your workflow changes.
           </p>
           <div class="hero-cta">
             <RouterLink v-if="auth.isAuthenticated" to="/dashboard" class="btn btn-primary">
@@ -315,8 +325,12 @@ async function copyEmail() {
             <RouterLink v-else to="/register" class="btn btn-primary">
               Get started
             </RouterLink>
-            <a href="#features" class="btn btn-secondary">Learn more</a>
+            <a href="https://github.com/191-iota" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">View on GitHub</a>
           </div>
+          <p class="hero-note">Open source · self-hosted · read-only on your Git.</p>
+          <p class="hero-audience">
+            For small-to-mid engineering teams running parallel branches who want conflict visibility without changing how they use Git.
+          </p>
         </div>
         <div class="reveal" data-delay="2">
           <div class="hero-terminal" role="img" aria-label="Simulated editor showing live teammate edits">
@@ -336,17 +350,17 @@ async function copyEmail() {
       <div class="container">
         <div class="stats-grid reveal">
           <div class="stat-item">
-            <p class="stat-num"><span class="counter" data-target="19" data-suffix="%">0%</span></p>
+            <p class="stat-num"><span class="counter" data-target="19" data-suffix="%">19%</span></p>
             <p class="stat-label">of merge attempts produce conflicts</p>
             <p class="stat-cite">Brindescu et al. 2020, 143 projects</p>
           </div>
           <div class="stat-item">
-            <p class="stat-num"><span class="counter" data-target="26" data-suffix="&times;">0&times;</span></p>
+            <p class="stat-num"><span class="counter" data-target="26" data-suffix="&times;">26&times;</span></p>
             <p class="stat-label">more error-prone when resolved manually</p>
             <p class="stat-cite">Ghiotto et al., IEEE TSE</p>
           </div>
           <div class="stat-item">
-            <p class="stat-num"><span class="counter" data-target="11" data-suffix="%">0%</span></p>
+            <p class="stat-num"><span class="counter" data-target="11" data-suffix="%">11%</span></p>
             <p class="stat-label">of dev time spent actually writing code</p>
             <p class="stat-cite">Microsoft Research</p>
           </div>
@@ -358,74 +372,27 @@ async function copyEmail() {
       <div class="container">
         <div class="inner reveal">
           <div>
-            <h2>Coordination costs compound.</h2>
+            <h2>You discover conflicts too late.</h2>
             <p>
-              Jira tickets, Slack pings, and stand-ups exist to answer one question:
-              <em>"What is everyone working on?"</em>
-              The answer is always stale by the time it lands.
+              By the time a conflict shows up, the overlapping work is already committed on both sides. The cost was paid long before anyone saw it.
             </p>
             <ul class="plain-list dashes">
-              <li>You alt-tab between IDE and project tracker dozens of times a day</li>
-              <li>Merge conflicts surface during PR review, hours or days after the overlap started</li>
-              <li>Status fields in the tracker drift from what the branch actually looks like</li>
+              <li>Overlap is discovered at PR review, hours or days after it started</li>
               <li>Two people edit the same file and nobody knows until one of them pushes</li>
+              <li>Merge-time tooling only activates once the conflict is already committed on both sides</li>
             </ul>
           </div>
           <div>
             <h2>The repo already knows.</h2>
             <p>
-              Lightning Git clones your repository on project creation, fetches on every open, and layers a live editing state on top via WebSocket. No new process, no new tool to learn.
+              The information needed to catch the overlap exists the moment two people start typing. Nobody is looking at it yet.
             </p>
             <ul class="plain-list checks">
-              <li>Each user's edits are held in separate per-user state, broadcast to everyone else</li>
-              <li>Conflict detection diffs every branch pair against main and flags overlapping hunks</li>
-              <li>Remote branches are auto-registered as Kanban tasks, columns are moved manually</li>
-              <li>The backend only runs read-only git commands, your history stays untouched</li>
+              <li>Each user's live edits are held server-side and broadcast to everyone on the file</li>
+              <li>Every active branch is diffed against <span class="code-badge">origin/main</span></li>
+              <li>Overlapping hunks are surfaced live, before any commit exists</li>
             </ul>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="features">
-      <div class="container">
-        <h2 class="reveal">What it does.</h2>
-        <p class="section-sub reveal">
-          A live session is a WebSocket connection per file. Everyone editing the same file shares a channel where edits, comments, and conflict warnings flow in real time. Everything below runs on top of that.
-        </p>
-        <div class="features-grid">
-          <article class="feature-card reveal" data-delay="0">
-            <h3>Live Code Overlay</h3>
-            <p>Every user editing a file gets their own in-memory state keyed by user ID. Changes are broadcast over the session channel to everyone else on the same file, so you see what your teammates are typing without anyone's work overwriting anyone else's.</p>
-          </article>
-          <article class="feature-card reveal" data-delay="1">
-            <h3>Live Comments</h3>
-            <p>Click any edited line to leave a comment. Comments are broadcast over the same WebSocket channel, tied to line numbers, and support @mentions with autocomplete from the project member list. They're in-memory and part of the session, gone on server restart like the overlays themselves.</p>
-          </article>
-          <article class="feature-card reveal" data-delay="2">
-            <h3>Pre-Merge Conflict Detection</h3>
-            <p>The backend diffs each active branch against <span class="code-badge">origin/main</span>, decomposes the changes into hunks, and groups overlapping line ranges. When two branches touch the same lines with different content, that's a conflict and it shows up before anyone merges.</p>
-          </article>
-          <article class="feature-card reveal" data-delay="3">
-            <h3>Notbremse</h3>
-            <p>One API call resets all your overlays in a project back to the base content from git. If your live state drifted or you want a clean slate, hit the emergency brake. It only affects your own overlays, everyone else's session state stays untouched.</p>
-          </article>
-          <article class="feature-card reveal" data-delay="4">
-            <h3>Automatic Task Tracking</h3>
-            <p>Remote branches are detected on every fetch and registered as tasks on a Kanban board. You move them between To&nbsp;Do, In&nbsp;Progress, Review, and Merged manually. Column state is persisted so it's consistent across users and devices.</p>
-          </article>
-          <article class="feature-card reveal" data-delay="5">
-            <h3>VS Code Extension</h3>
-            <p>Press <span class="code-badge">Ctrl+Shift+L</span> or <span class="code-badge">Cmd+Shift+L</span> to connect. The extension sends your edits with a 1s debounce and renders teammate changes as inline peek decorations. The status bar shows who's active and whether any conflicts are predicted.</p>
-          </article>
-          <article class="feature-card reveal" data-delay="6">
-            <h3>Web Dashboard</h3>
-            <p>A browser-based view of the same data. Kanban board, member management, file tree with live-edit indicators, and a project-wide activity feed that shows who is editing which file on which branch.</p>
-          </article>
-          <article class="feature-card reveal" data-delay="7">
-            <h3>Git Mirror Sync</h3>
-            <p>The backend clones the repo once on project creation and fetches on every project open to stay current. The local mirror is the data source for branch listing, file reads, and diff computation. Only read-only git commands run against it.</p>
-          </article>
         </div>
       </div>
     </section>
@@ -440,19 +407,54 @@ async function copyEmail() {
           <div class="compare-card reveal" data-delay="0">
             <p class="compare-label">vs GitLive</p>
             <h3>Open source and self-hosted</h3>
-            <p>GitLive is closed-source SaaS that routes your editing activity through their infrastructure. Lightning Git is fully open source and runs on your own server, so overlay data never leaves your network. It also goes further than gutter indicators by showing grouped conflict hunks with per-contributor versions side by side.</p>
+            <p>GitLive is closed-source SaaS that routes your editing activity through their infrastructure. Lightning Git is open source and runs on your own server, so overlay data never leaves your network. It also goes past gutter indicators, showing grouped conflict hunks with per-contributor versions side by side.</p>
           </div>
           <div class="compare-card reveal" data-delay="1">
             <p class="compare-label">vs GitKraken</p>
             <h3>Layers on top, replaces nothing</h3>
-            <p>GitKraken's Team View shows who's on which branch and flags shared files, but it's a full Git client that replaces your workflow. Lightning Git sits on top of VS Code and any Git host without changing how you commit, push, or review. The Kanban board is derived from branches you already have.</p>
+            <p>GitKraken's Team View is a full Git client that replaces your workflow. Lightning Git layers on top of VS Code and any Git host without changing how you commit, push, or review.</p>
           </div>
           <div class="compare-card reveal" data-delay="2">
             <p class="compare-label">vs merge-time tooling</p>
             <h3>Conflicts surface while you type</h3>
-            <p>VS Code's built-in merge editor and tools like Beyond Compare activate after you attempt a merge. By then the overlap is already committed on both sides. Lightning Git runs its diff pipeline when you open a file or when the frontend polls the merge endpoint, so you see the conflict while both contributors still have context.</p>
+            <p>VS Code's merge editor and tools like Beyond Compare only activate after you attempt a merge, when the overlap is already committed on both sides. Lightning Git surfaces conflicts live as teammates type, before anyone commits.</p>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section id="wedge">
+      <div class="container">
+        <h2 class="reveal">Conflicts, before a commit exists.</h2>
+        <p class="section-sub reveal">
+          One capability sits at the center of everything else: pre-merge conflict detection over live edits.
+        </p>
+        <div class="wedge-flow reveal">
+          <ul class="plain-list dashes">
+            <li>Each contributor's live edits are held server-side, per user, broadcast to everyone on the file</li>
+            <li>Every active branch is diffed against <span class="code-badge">origin/main</span> and decomposed into hunks</li>
+            <li>Overlapping ranges are grouped and surfaced with each contributor's version side by side</li>
+            <li>All of it live, before either side has committed anything</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="container">
+        <h2 class="reveal">Also in the box.</h2>
+        <p class="section-sub reveal">
+          Everything that supports the live conflict view, kept deliberately secondary.
+        </p>
+        <ul class="capability-list reveal">
+          <li><strong>Live overlay</strong> &mdash; see teammates' edits on a file as they type, attributed per user.</li>
+          <li><strong>Line-tied comments</strong> &mdash; comment on any edited line, with @mention autocomplete.</li>
+          <li><strong>Notbremse</strong> &mdash; one click wipes your live state back to the committed base.</li>
+          <li><strong>VS Code extension</strong> &mdash; connect from the editor; edits and conflicts stream inline.</li>
+          <li><strong>Web dashboard</strong> &mdash; a browser view for non-coding stakeholders.</li>
+          <li><strong>Read-only Git mirror</strong> &mdash; the data source for branches, file reads, and diffs.</li>
+          <li><strong>Branch overview</strong> &mdash; remote branches also show up as tasks on a simple board.</li>
+        </ul>
       </div>
     </section>
 
@@ -463,22 +465,22 @@ async function copyEmail() {
           <div class="step-card reveal" data-delay="0">
             <p class="step-number">01</p>
             <h3>Add a repository</h3>
-            <p>Create a project and point it at a Git remote. The backend clones it once and runs a fetch every time someone opens the project, so the mirror stays current on demand.</p>
+            <p>Point a project at a Git remote. The backend clones it once and fetches on every open, so the read-only mirror stays current.</p>
           </div>
           <div class="step-card reveal" data-delay="1">
             <p class="step-number">02</p>
-            <h3>Branches become tasks</h3>
-            <p>On every fetch the backend scans remote refs and registers each branch as a Kanban task. You drag them between columns yourself, the board just removes the need for a separate ticket tracker.</p>
+            <h3>Branches show up</h3>
+            <p>Each remote branch is registered on a simple board, derived from refs you already have. No separate ticket tracker needed.</p>
           </div>
           <div class="step-card reveal" data-delay="2">
             <p class="step-number">03</p>
             <h3>Open a file</h3>
-            <p>The VS Code extension opens a WebSocket per file. The server pushes a snapshot of all active editors and comments immediately, then streams every subsequent change.</p>
+            <p>The editor opens a WebSocket per file. The server pushes a snapshot of active editors and comments, then streams every change.</p>
           </div>
           <div class="step-card reveal" data-delay="3">
             <p class="step-number">04</p>
-            <h3>Conflicts surface early</h3>
-            <p>When you open a file the frontend calls the merge endpoint, which diffs every branch against main and flags overlapping hunks. The client also polls periodically and computes live overlap from active overlays between polls.</p>
+            <h3>Conflicts surface live</h3>
+            <p>As teammates type, the backend diffs every branch against main and pushes overlapping hunks to the file's channel, before anyone commits.</p>
           </div>
         </div>
       </div>
@@ -503,11 +505,11 @@ async function copyEmail() {
           </div>
           <div class="principle-card reveal" data-delay="1">
             <p class="principle-label">In-memory</p>
-            <p>Live overlay state is held in server memory and keyed per project and per user. On restart it's gone. Nothing about uncommitted work touches a database or disk.</p>
+            <p>Live overlay state is held in server memory, keyed per project and user. On restart it's gone; uncommitted work never touches a database or disk.</p>
           </div>
           <div class="principle-card reveal" data-delay="2">
             <p class="principle-label">Project-isolated</p>
-            <p>Every WebSocket message is membership-checked before broadcast. Users are scoped to their project, and org-level permissions gate access to all projects underneath.</p>
+            <p>Every WebSocket message is membership-checked before broadcast. Users are scoped to their project; org permissions gate access underneath.</p>
           </div>
         </div>
       </div>
@@ -550,8 +552,8 @@ async function copyEmail() {
           </div>
           <div class="upcoming-item reveal" data-delay="5">
             <div>
-              <h3>Production deployment and paid tier</h3>
-              <p>Self-hosting documentation, Docker images, and a managed hosted option with a paid plan for teams who don't want to run their own infrastructure.</p>
+              <h3>Managed hosting</h3>
+              <p>Self-hosting docs, Docker images, and an optional managed hosting setup for teams who don't want to run their own infrastructure.</p>
             </div>
           </div>
         </div>
@@ -561,7 +563,7 @@ async function copyEmail() {
     <section id="contact">
       <div class="container">
         <h2 class="reveal">Get in touch.</h2>
-        <p class="section-sub reveal">Built as a Swiss HF diploma project. Reach out if you want to talk about it.</p>
+        <p class="section-sub reveal">Built as a Swiss HF diploma project. Reach out if you want to talk.</p>
         <div class="reveal contact-actions">
           <span class="email-copy" :title="emailLabel === 'copied' ? 'copied' : 'Click to copy'" @click="copyEmail">{{ emailLabel }}</span>
           <RouterLink v-if="!auth.isAuthenticated" to="/register" class="btn btn-primary">Try it</RouterLink>
@@ -830,7 +832,20 @@ async function copyEmail() {
   gap: 0.6rem;
   justify-content: center;
   flex-wrap: wrap;
-  margin-bottom: 3.5rem;
+  margin-bottom: 1rem;
+}
+.lg-landing .hero-note {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin: 0 auto 1.5rem;
+}
+.lg-landing .hero-audience {
+  font-size: 0.85rem;
+  color: var(--text-sec);
+  max-width: 560px;
+  margin: 0 auto 3rem;
+  line-height: 1.6;
 }
 
 /* hero terminal */
@@ -1382,6 +1397,61 @@ async function copyEmail() {
   font-size: 0.775rem;
   color: var(--text-sec);
   line-height: 1.6;
+}
+
+/* wedge */
+.lg-landing #wedge {
+  background: var(--bg-warm);
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+}
+.lg-landing #wedge h2 {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: clamp(1.35rem, 2.5vw, 1.7rem);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  text-align: center;
+  margin-bottom: 0.35rem;
+  color: var(--ink);
+}
+.lg-landing #wedge .section-sub {
+  text-align: center;
+  color: var(--text-sec);
+  margin-bottom: 2.5rem;
+  font-size: 0.925rem;
+}
+.lg-landing .wedge-flow {
+  max-width: 640px;
+  margin: 0 auto;
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: 0.5rem;
+  padding: 1.5rem 1.6rem;
+}
+.lg-landing .wedge-flow .plain-list { margin-top: 0; }
+
+/* supporting capabilities */
+.lg-landing #features .capability-list {
+  list-style: none;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.lg-landing #features .capability-list li {
+  font-size: 0.85rem;
+  color: var(--text-sec);
+  line-height: 1.6;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border-light);
+  border-radius: 0.375rem;
+  background: var(--bg);
+}
+.lg-landing #features .capability-list strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .lg-landing :focus-visible {

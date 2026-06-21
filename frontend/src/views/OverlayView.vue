@@ -9,7 +9,6 @@ import { useActivityStore } from "@/stores/activity";
 import type { ActiveEdit, Comment, MergeConflict, ProjectTree } from "@/types/api";
 import FileTreeNode from "@/components/FileTreeNode.vue";
 import { buildTree, computeProjectedLines, type ProjLine } from "@/utils/overlay";
-import { computeCombinedDiff, computeConflicts, flattenConflicts } from "@/utils/merge";
 import NavBar from "@/components/NavBar.vue";
 import Skeleton from "@/components/Skeleton.vue";
 import TabStrip, { type Tab } from "@/components/TabStrip.vue";
@@ -91,46 +90,20 @@ const loadingTree = ref(false);
 const comments = ref<Comment[]>([]);
 const draftLine = ref<number | null>(null);
 const draftText = ref("");
-let conflictsTimer: ReturnType<typeof setInterval> | null = null;
 
-// backend-computed merge conflicts for the current file. polled, not pushed.
-// the backend already runs the hunk overlap algorithm across every branch's
-// content (committed and live overlays) against origin/main, so we just
-// surface its result instead of recomputing locally.
-// shallowRef because the response is a freshly-decoded JSON array we always
-// replace wholesale, and deep-proxying every hunk + content array on each
-// 60s tick was making the page hitch when many branches diverged.
+// merge conflicts for the current file. pushed over the per-file overlay WS
+// (the backend's "conflicts" broadcast), not polled. the backend runs the
+// hunk overlap algorithm across every branch's content (committed and live
+// overlays) against origin/main and pushes the authoritative result live, so
+// we just surface it instead of recomputing locally.
+// shallowRef because each frame is a freshly-decoded JSON array we always
+// replace wholesale, and deep-proxying every hunk + content array per frame
+// was making the page hitch when many branches diverged.
 const mergeConflicts = shallowRef<MergeConflict[]>([]);
-
-// Live conflicts run the SAME algorithm as the backend's merge_service
-// (computeCombinedDiff + computeConflicts mirror compute_combined_diff +
-// compute_conflicts). The live pass only sees live overlay sources; the
-// backend's 60s poll sees those PLUS committed branches and writes its
-// authoritative result into mergeConflicts. Because both use the same
-// algorithm, the two results align at overlapping ranges and the backend
-// just adds any extra conflicts it found on committed branches.
-const liveConflicts = computed<MergeConflict[]>(() => {
-  const file = currentFile.value;
-  const branchLookup = new Map<string, string>();
-  for (const e of projectEdits.value) {
-    if (e.file === file) branchLookup.set(e.user_id, e.branch);
-  }
-  const sources = others.value.map((u) => ({
-    branch: branchLookup.get(u.user_id) ?? "?",
-    userId: u.user_id,
-    content: u.content,
-  }));
-  const hunks = computeCombinedDiff(baseContent.value, sources);
-  return computeConflicts(hunks);
-});
-
-const effectiveConflicts = computed<MergeConflict[]>(() =>
-  flattenConflicts(liveConflicts.value, mergeConflicts.value),
-);
 
 const conflictByLine = computed(() => {
   const map = new Map<number, MergeConflict>();
-  for (const c of effectiveConflicts.value) {
+  for (const c of mergeConflicts.value) {
     for (let line = c.base_start + 1; line <= c.base_end; line++) {
       map.set(line, c);
     }
@@ -303,11 +276,8 @@ onMounted(() => {
   projectStore.fetchMembers(projectId.value).catch(() => undefined);
   activityStore.ensure(projectId.value);
   void initBranchView();
-  // backend is the slow source of truth (commits, cross-branch). live
-  // overlap synthesis on the client bridges the gap so we dont need a fast
-  // poll. the in-flight guard in refreshConflicts keeps slow ticks from
-  // stacking.
-  conflictsTimer = setInterval(() => void refreshConflicts(), 60000);
+  // conflicts now arrive on the per-file overlay WS as "conflicts" frames;
+  // no client-side poll or synthesis needed.
 });
 
 async function loadTree() {
@@ -367,10 +337,9 @@ async function openFile(path: string) {
   try {
     const { data } = await api.get<string>(
       // base content for merge analysis is origin/main (the merge target),
-      // NOT the user's feature branch. otherwise commits already on the
-      // feature branch look like "matching base" client-side while the
-      // backend (which always diffs vs main) sees them as divergent — and
-      // the live conflict ends up smaller than the 60s-poll conflict.
+      // NOT the user's feature branch — matching the backend, which always
+      // diffs against main. (Conflict detection runs server-side and is
+      // pushed over the WS; this base only feeds the local projection.)
       `/api/projects/${projectId.value}/file?branch=main&path=${encodeURIComponent(path)}`,
       { responseType: "text", transformResponse: [(v) => v] },
     );
@@ -383,41 +352,9 @@ async function openFile(path: string) {
   }
 
   // open the per-file WS. the backend pushes a Snapshot immediately so
-  // others + comments populate without a separate fetch.
+  // others + comments populate without a separate fetch, then streams
+  // "conflicts" frames as edits land.
   connectFileLive(path);
-  void refreshConflicts();
-}
-
-function encodeFilePath(path: string): string {
-  return path.split("/").map(encodeURIComponent).join("/");
-}
-
-// in-flight guard. without this, when the merge endpoint takes >60s (many
-// branches serializing through the git fetch_lock on the backend), the
-// setInterval keeps firing new requests on top of pending ones; when they
-// all eventually return their responses land in a burst, and each wholesale
-// replace of mergeConflicts churns the render. one at a time is enough.
-let conflictsInFlight = false;
-async function refreshConflicts() {
-  const file = currentFile.value;
-  if (!file) {
-    mergeConflicts.value = [];
-    return;
-  }
-  if (conflictsInFlight) return;
-  conflictsInFlight = true;
-  try {
-    const { data } = await api.get<MergeConflict[]>(
-      `/api/merge/${projectId.value}/${encodeFilePath(file)}`,
-    );
-    // file may have changed while we were awaiting; only commit if its still
-    // the one the user is looking at.
-    if (currentFile.value === file) mergeConflicts.value = data;
-  } catch {
-    if (currentFile.value === file) mergeConflicts.value = [];
-  } finally {
-    conflictsInFlight = false;
-  }
 }
 
 function commentsForLine(line: number): Comment[] {
@@ -593,6 +530,12 @@ function handleMessage(msg: WsMessage) {
       comments.value = [...msg.comments];
       others.value = [...msg.all_user_contents];
       return;
+    case "conflicts":
+      // backend pushes the full conflict set for this file on every recompute;
+      // replace wholesale (immutable, mirroring the snapshot arm). no
+      // client-side union/fallback — the backend's set is authoritative.
+      mergeConflicts.value = [...msg.conflicts];
+      return;
     case "overlay": {
       const entry: OverlayUserView = {
         user_id: msg.user_id,
@@ -638,7 +581,6 @@ async function initBranchView() {
 
 onUnmounted(() => {
   ws?.dispose();
-  if (conflictsTimer) clearInterval(conflictsTimer);
   // intentionally NOT disposing activityStore, its WS is shared and persists
   // across the ProjectView <-> OverlayView navigation.
 });
