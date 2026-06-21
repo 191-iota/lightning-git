@@ -1,0 +1,94 @@
+{
+  "name": "hf-lightning-git-vsc",
+  "displayName": "Lightning Git",
+  "description": "VSCode extension for lightning-git",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "lightning-git.register",
+        "title": "Lightning Git: Register"
+      },
+      {
+        "command": "lightning-git.login",
+        "title": "Lightning Git: Login"
+      },
+      {
+        "command": "lightning-git.logout",
+        "title": "Lightning Git: Logout"
+      },
+      {
+        "command": "lightning-git.startSession",
+        "title": "Lightning Git: Start Session"
+      },
+      {
+        "command": "lightning-git.stopSession",
+        "title": "Lightning Git: Stop Session"
+      },
+      {
+        "command": "lightning-git.viewChange",
+        "title": "Lightning Git: View Teammate Change"
+      },
+      {
+        "command": "lightning-git.peekTeammates",
+        "title": "Lightning Git: Peek Teammate Changes"
+      },
+      {
+        "command": "lightning-git.peekConflicts",
+        "title": "Lightning Git: Peek Merge Conflicts"
+      },
+      {
+        "command": "lightning-git.notbremse",
+        "title": "Lightning Git: Notbremse (Wipe Live Session)"
+      }
+    ],
+    "configuration": {
+      "title": "Lightning Git",
+      "properties": {
+        "lightningGit.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:8080",
+          "description": "Backend API endpoint"
+        },
+        "lightningGit.wsUrl": {
+          "type": "string",
+          "default": "ws://localhost:8080",
+          "description": "WebSocket server URL"
+        },
+        "lightningGit.debounceMs": {
+          "type": "number",
+          "default": 250,
+          "description": "Delay before broadcasting local edits to teammates. Lower values feel more live; higher values give a wider window to clear accidentally typed credentials with the Notbremse before sync."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.x",
+    "@types/vscode": "^1.74.0",
+    "@types/ws": "^8.18.1",
+    "eslint": "^9.39.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "vitest": "^4.1.9"
+  }
+}

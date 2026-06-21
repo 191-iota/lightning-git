@@ -1,0 +1,17 @@
+node_modules/
+dist/
+out/
+.vscode-test/
+*.vsix
+*.tgz
+pnpm-lock.yaml
+yarn.lock
+coverage/
+.nyc_output/
+*.log
+.DS_Store
+
+# local env / secrets
+.env
+.env.*
+.DS_Store
