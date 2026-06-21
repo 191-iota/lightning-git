@@ -161,4 +161,19 @@ describe("computeProjectedLines", () => {
     // ...and so are the lines around it that merely shifted.
     expect(lines.every((l) => l.userId === undefined)).toBe(true);
   });
+
+  it("terminates and keeps the wider edit when two users' ranges overlap by different widths", () => {
+    // Regression guard: u1 rewrites a wide span (lines 1-4) while u2 edits a
+    // single line inside it. The wide change advances the cursor past u2's
+    // start, so u2 is overtaken. Before the fix this spun forever (the loop
+    // could never reach u2's start once the base ran out); now it terminates,
+    // the wider writer's content wins for the overlapped region, and the
+    // overtaken narrower edit is dropped. Reaching the assertion at all proves
+    // the loop no longer hangs.
+    const overlays = [userView("u1", "X\nY\ne"), userView("u2", "a\nb\nC\nd\ne")];
+    const lines = computeProjectedLines("a\nb\nc\nd\ne", overlays);
+    expect(lines.map((l) => l.text)).toEqual(["X", "Y", "e"]);
+    expect(lines[0].userId).toBe("u1");
+    expect(lines.some((l) => l.text === "C")).toBe(false);
+  });
 });

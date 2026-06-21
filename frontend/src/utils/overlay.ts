@@ -123,6 +123,10 @@ export function computeProjectedLines(
     // start, leaving it behind the cursor. Its base region is already emitted,
     // so skip it. Without this the loop can never reach `startBaseIdx === baseIdx`
     // for the stranded change and spins forever once the base lines run out.
+    // Termination relies on the invariant that every UserChange from
+    // `userChanges` has startBaseIdx <= baseLines.length (startBaseIdx is the
+    // running base cursor, which only steps over real base lines). Callers must
+    // build changes via `userChanges`, not hand-roll them past the base end.
     while (i < allChanges.length && allChanges[i].startBaseIdx < baseIdx) {
       i++;
     }
