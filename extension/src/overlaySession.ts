@@ -3,11 +3,9 @@ import WebSocket from "ws";
 import {
   LightningGitClient,
   type Comment,
-  type ConflictHunk,
   type MergeConflict,
   type ProjectMember,
 } from "./client";
-import { mergeWithBackend, synthesizeLiveConflicts } from "./liveConflicts";
 import { ConflictPanel } from "./conflictPanel";
 import { conflictsEqual } from "./conflictsEqual";
 
@@ -16,6 +14,7 @@ import { conflictsEqual } from "./conflictsEqual";
 /// per-file overlay channel.
 type WsMessage =
   | { kind: "overlay"; user_id: string; content: string; line_section: [number, number] }
+  | { kind: "conflicts"; file: string; conflicts: MergeConflict[] }
   | { kind: "comment_created"; id: string; user_id: string; line: number; text: string; created_at: number }
   | { kind: "comment_deleted"; id: string }
   | {
@@ -42,21 +41,19 @@ export class OverlaySession {
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
   private peekHideTimer: ReturnType<typeof setTimeout> | undefined;
   private conflictPeekHideTimer: ReturnType<typeof setTimeout> | undefined;
-  private conflictPollTimer: ReturnType<typeof setInterval> | undefined;
 
   private activeFile: string | undefined;
   private activeBranch: string | undefined;
   private pendingPath: string | undefined;
   private readonly teammateChanges = new Map<string, TeammateChange>();
-  // last backend-reported conflicts (60s poll) and the current effective
-  // set = backend ∪ live-synthesized. live ones are recomputed on every
-  // teammate keystroke so the panel doesnt lag a minute behind reality.
-  private backendConflicts: MergeConflict[] = [];
+  // current conflict set, pushed whole by the server on each "conflicts"
+  // message over the overlay channel. the backend now owns conflict
+  // detection (committed branches + live overlays); the client just renders.
   private conflicts: MergeConflict[] = [];
-  // base content for the active file at origin/{branch}, fetched once on
-  // file open. used as the diff base for live overlay-vs-overlay synthesis,
-  // same input the frontend feeds to computeProjectedLines.
-  private baseContent = "";
+  // last set actually painted to status bar / gutter / panel. used as the
+  // repaint guard so an identical "conflicts" message doesnt re-issue
+  // setDecorations + webview html and saturate the IPC channel.
+  private lastRendered: MergeConflict[] = [];
   private comments: Comment[] = [];
   // user_id -> display_name, refreshed when the session starts. fallback to
   // a short uuid prefix for users not in the cache.
@@ -101,11 +98,6 @@ export class OverlaySession {
   });
 
   private showingPeek = false;
-
-  // matches the web client: backend is the slow source of truth (commits +
-  // other branches), live overlay-vs-overlay synthesis on the client bridges
-  // the gap so the UI never waits a full minute for a live conflict to show.
-  private static readonly CONFLICT_POLL_INTERVAL_MS = 60_000;
 
   constructor(
     private readonly client: LightningGitClient,
@@ -212,7 +204,7 @@ export class OverlaySession {
     this.ws?.close();
     this.ws = undefined;
 
-    this.stopConflictPolling();
+    this.stopRenderTimer();
 
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
@@ -238,6 +230,7 @@ export class OverlaySession {
     this.disposables.length = 0;
     this.teammateChanges.clear();
     this.conflicts = [];
+    this.lastRendered = [];
     this.comments = [];
 
     this.conflictPanel?.dispose();
@@ -281,31 +274,13 @@ export class OverlaySession {
       this.activeBranch = branch;
       this.teammateChanges.clear();
       this.conflicts = [];
-      this.backendConflicts = [];
-      this.baseContent = "";
+      this.lastRendered = [];
       this.comments = [];
 
       this.updateStatusBar();
       this.updateConflictStatusBar();
 
       await this.client.createOverlay(this.projectId, this.userId, branch, relativePath);
-
-      // fire and forget: live synthesis needs the branch's committed content
-      // base content for merge analysis is origin/main (the merge target).
-      // backend's calculate_live_diff always diffs vs main; using the
-      // user's feature branch as base instead would let feature-branch
-      // commits look like "matching base" client-side and the live
-      // synthesis would emit smaller conflicts than the 60s poll's.
-      void this.client
-        .getFileAtBranch(this.projectId, "main", relativePath)
-        .then((content) => {
-          if (this.activeFile !== relativePath) return;
-          this.baseContent = content;
-          this.recomputeAndRender();
-        })
-        .catch(() => undefined);
-
-      this.startConflictPolling();
 
       const wsUrl = await this.client.getOverlayWsUrl(this.projectId, this.userId, relativePath);
       await this.connectWebSocket(wsUrl, relativePath);
@@ -366,9 +341,6 @@ export class OverlaySession {
     };
 
     this.ws.send(JSON.stringify(message));
-    // local edits change which lines are live-conflicting; keep the panel
-    // in sync with the editor without waiting for a server roundtrip.
-    this.recomputeAndRender();
   }
 
   private handleIncomingMessage(raw: string): void {
@@ -384,9 +356,10 @@ export class OverlaySession {
         this.renderCommentDecorations();
         // mirror frontend OverlayView.vue case "snapshot": seed teammate
         // overlays from the snapshot so a late joiner sees existing live
-        // conflicts immediately, instead of waiting for the other user's
+        // edits immediately, instead of waiting for the other user's
         // next keystroke to repopulate teammateChanges. clear first since
-        // a WS reconnect resends the snapshot as the new truth.
+        // a WS reconnect resends the snapshot as the new truth. conflicts
+        // arrive separately via the server's "conflicts" message.
         this.teammateChanges.clear();
         for (const u of msg.all_user_contents) {
           if (u.user_id === this.userId) continue;
@@ -397,7 +370,12 @@ export class OverlaySession {
           });
         }
         this.updateStatusBar();
-        this.recomputeAndRender();
+        return;
+      case "conflicts":
+        // whole-set replace: the backend owns conflict detection and pushes
+        // the full conflict list for this file on every recompute.
+        this.conflicts = msg.conflicts;
+        this.renderConflicts();
         return;
       case "comment_created":
         // server-assigned id might already be in our list if the broadcast
@@ -428,24 +406,8 @@ export class OverlaySession {
         });
         this.updateStatusBar();
         this.flashStatusBar();
-        // live synthesis is local-only; recompute the panel right away so
-        // the user sees the conflict appear within a tick of the teammate
-        // typing, not on the next 60s poll.
-        this.recomputeAndRender();
         return;
     }
-  }
-
-  // Synchronous scan of already-open text documents; returns undefined when
-  // the file isn't loaded yet. Used by recomputeAndRender to grab the local
-  // user's current content regardless of which view has focus.
-  private findOpenDocument(relPath: string | undefined): vscode.TextDocument | undefined {
-    if (!relPath) return undefined;
-    for (const d of vscode.workspace.textDocuments) {
-      if (d.uri.scheme !== "file") continue;
-      if (vscode.workspace.asRelativePath(d.uri, false) === relPath) return d;
-    }
-    return undefined;
   }
 
   getActiveFile(): string | undefined {
@@ -621,14 +583,14 @@ export class OverlaySession {
       void vscode.window.showInformationMessage("No predicted merge conflicts on this file.");
       return;
     }
-    // tear down any existing panel and rebuild fresh on every click.
-    // tried tracking a disposed flag and reusing the live panel; some
-    // edge case (panel close + click sequence, or hidden-then-reveal with
-    // retainContextWhenHidden) left the second open showing empty. force
-    // a fresh webview every time so the user never sees a stuck panel.
-    if (this.conflictPanel) {
-      this.conflictPanel.dispose();
-      this.conflictPanel = undefined;
+    // reuse the live panel if it exists and hasn't been disposed: reveal it
+    // and repaint. recreating on every click raced the async webview dispose
+    // against update(), which is what left the reopened tab stale/empty. only
+    // build a fresh panel once the old one is genuinely gone (isDisposed()).
+    if (this.conflictPanel && !this.conflictPanel.isDisposed()) {
+      this.conflictPanel.reveal();
+      this.conflictPanel.update(this.conflicts);
+      return;
     }
     this.conflictPanel = new ConflictPanel(this, () => {
       this.conflictPanel = undefined;
@@ -636,84 +598,31 @@ export class OverlaySession {
     this.conflictPanel.update(this.conflicts);
   }
 
-  // in-flight guard: when the backend takes longer than the poll interval
-  // (many branches serializing through git fetch_lock), the next setInterval
-  // fires before the previous request returns. Responses then arrive in a
-  // burst and repaint the panel multiple times in quick succession, which
-  // is what made the panel look frozen and let the user click "Suggest"
-  // multiple times on a conflict that had already been resolved.
-  private conflictsInFlight = false;
-  private async pollConflicts(): Promise<void> {
-    if (!this.activeFile) {
-      return;
-    }
-    if (this.conflictsInFlight) return;
-    this.conflictsInFlight = true;
-    const file = this.activeFile;
-    try {
-      const fresh = await this.client.getMergeConflicts(this.projectId, this.userId, file);
-      if (this.activeFile !== file) return;
-      this.backendConflicts = fresh;
-    } catch {
-      if (this.activeFile !== file) return;
-      this.backendConflicts = [];
-    } finally {
-      this.conflictsInFlight = false;
-    }
-    this.recomputeAndRender();
-  }
-
-  // coalesce rapid recomputes. without this, every teammate keystroke fired
-  // a sync render that touched status bar + decorations (+ webview html if
-  // the panel was open), saturating the IPC channel between the extension
-  // host and the renderer process. two users typing simultaneously was
-  // enough to make VSC stop responding to commands like "open conflict
-  // panel". 60ms is short enough to feel instant.
+  // coalesce rapid renders. without this, a burst of "conflicts" messages
+  // (server recomputing as several teammates type) fires a sync render per
+  // message that touches status bar + decorations (+ webview html if the
+  // panel is open), saturating the IPC channel between the extension host
+  // and the renderer process. two users typing simultaneously was enough to
+  // make VSC stop responding to commands like "open conflict panel". 60ms
+  // is short enough to feel instant.
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
-  private recomputeAndRender(): void {
+  private renderConflicts(): void {
     if (this.renderTimer) return;
     this.renderTimer = setTimeout(() => {
       this.renderTimer = undefined;
       try {
-        this.doRecomputeAndRender();
+        // dont re-issue setDecorations / webview html unless the conflict
+        // set actually changed since the last paint; vscode's IPC stays
+        // unblocked when nothing is happening.
+        if (conflictsEqual(this.lastRendered, this.conflicts)) return;
+        this.lastRendered = this.conflicts;
+        this.updateConflictStatusBar();
+        this.applyConflictGutter();
+        this.conflictPanel?.update(this.conflicts);
       } catch (err) {
-        console.error("Lightning Git: recompute failed", err);
+        console.error("Lightning Git: render failed", err);
       }
     }, 60);
-  }
-
-  // unified pipeline: backend conflicts (slow source of truth from the 60s
-  // poll) merged with live conflicts synthesized client-side.
-  private doRecomputeAndRender(): void {
-    // resolve the local document by path, not by focus. when the user is
-    // looking at the conflict panel webview, activeTextEditor is undefined
-    // and we'd silently drop the local user's content from the synthesis
-    // input. overlays.length would fall to 1 (just teammates) and the early
-    // return at the top of synthesizeLiveConflicts wipes all conflicts. the
-    // 60s poll then arrives, recomputes the same empty set, and the panel
-    // flips to "No conflicts" while the user is staring at the divergence.
-    const overlays: { userId: string; content: string }[] = [];
-    const localDoc = this.findOpenDocument(this.activeFile);
-    if (localDoc) {
-      overlays.push({ userId: this.userId, content: localDoc.getText() });
-    }
-    for (const [uid, change] of this.teammateChanges) {
-      overlays.push({ userId: uid, content: change.content });
-    }
-    const live = synthesizeLiveConflicts({
-      baseContent: this.baseContent,
-      overlays,
-      branchOf: () => this.activeBranch ?? "?",
-    });
-    const next = mergeWithBackend(this.backendConflicts, live);
-    // dont re-issue setDecorations / webview html unless something actually
-    // changed; vscode's IPC stays unblocked when nothing is happening.
-    const same = conflictsEqual(this.conflicts, next);
-    this.conflicts = next;
-    if (same) return;
-    this.updateConflictStatusBar();
-    this.applyConflictGutter();
-    this.conflictPanel?.update(this.conflicts);
   }
 
   /// Subtle left-border + overview ruler tick on every conflict line so the
@@ -754,21 +663,7 @@ export class OverlaySession {
     }
   }
 
-  private startConflictPolling(): void {
-    this.stopConflictPolling();
-
-    void this.pollConflicts();
-
-    this.conflictPollTimer = setInterval(() => {
-      void this.pollConflicts();
-    }, OverlaySession.CONFLICT_POLL_INTERVAL_MS);
-  }
-
-  private stopConflictPolling(): void {
-    if (this.conflictPollTimer) {
-      clearInterval(this.conflictPollTimer);
-      this.conflictPollTimer = undefined;
-    }
+  private stopRenderTimer(): void {
     if (this.renderTimer) {
       clearTimeout(this.renderTimer);
       this.renderTimer = undefined;
@@ -801,7 +696,11 @@ export class OverlaySession {
   }
 
   private renderCommentDecorations(): void {
-    const editor = vscode.window.activeTextEditor;
+    // resolve by tracked file, not focus. activeTextEditor is undefined when
+    // the conflict panel webview (or any non-editor view) has focus, and is a
+    // DIFFERENT document when the user tabs to another file — both cases would
+    // land the comment decoration on the wrong document or drop it entirely.
+    const editor = this.findVisibleEditor();
     if (!editor) {
       return;
     }
@@ -850,8 +749,10 @@ export class OverlaySession {
     // 1) conflict info first if this line is part of a backend-detected
     // merge conflict region. shows each branch + per-version content in a
     // proper markdown code block instead of the cramped inline decoration.
-    const conflict = this.conflicts.find(
-      (c) => line > c.base_start && line <= c.base_end,
+    const conflict = this.conflicts.find((c) =>
+      c.base_start === c.base_end
+        ? line === c.base_start + 1
+        : line > c.base_start && line <= c.base_end,
     );
     if (conflict) {
       this.appendConflictMarkdown(md, conflict);
@@ -884,7 +785,7 @@ export class OverlaySession {
   /// with all contributors credited.
   private appendConflictMarkdown(md: vscode.MarkdownString, conflict: MergeConflict): void {
     md.appendMarkdown(
-      `**Merge conflict** · lines ${conflict.base_start + 1}-${conflict.base_end}\n\n`,
+      `**Merge conflict** · ${this.conflictRangeLabel(conflict.base_start, conflict.base_end)}\n\n`,
     );
     type Version = { contributors: (string | null | undefined)[]; content: string[] };
     const byBranch = new Map<string, Map<string, Version>>();
@@ -918,6 +819,18 @@ export class OverlaySession {
         md.appendMarkdown(`_${this.escapeMd(labels)}_\n\n\`\`\`\n${body}\n\`\`\``);
       }
     }
+  }
+
+  /// Human label for a conflict's base range. base_start/base_end are 0-based,
+  /// half-open [start, end). A pure insert / single line has base_start ===
+  /// base_end; the old `${base_start+1}-${base_end}` form rendered that as
+  /// e.g. "5-4" (start bumped, end not). Show a single 1-based line number in
+  /// that case, otherwise a proper "first–last" 1-based span.
+  private conflictRangeLabel(baseStart: number, baseEnd: number): string {
+    if (baseStart === baseEnd) {
+      return `line ${baseStart + 1}`;
+    }
+    return `lines ${baseStart + 1}–${baseEnd}`;
   }
 
   private fmtAge(unixSecs: number): string {
