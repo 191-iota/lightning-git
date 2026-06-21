@@ -337,3 +337,96 @@ fn reset_user_overlays_only_touches_the_caller() {
     assert_eq!(uo_a.content, "committed");
     assert_eq!(uo_b.content, "b edits", "other users must be untouched");
 }
+
+// compute_activity: the project-wide activity snapshot must reflect the
+// current overlays. This feeds the WS activity feed.
+
+#[test]
+fn compute_activity_empty_for_unknown_project() {
+    let state = test_app_state();
+    let edits = state.compute_activity(&Uuid::new_v4());
+    assert!(edits.is_empty());
+}
+
+#[test]
+fn compute_activity_reflects_active_overlays() {
+    let state = test_app_state();
+    let proj = Uuid::new_v4();
+    let user_a = Uuid::new_v4();
+    let user_b = Uuid::new_v4();
+
+    state.get_or_create_overlay(proj, "main.rs".into(), user_a, "x".into(), "branch-a".into());
+    state.get_or_create_overlay(proj, "lib.rs".into(), user_b, "y".into(), "branch-b".into());
+
+    let edits = state.compute_activity(&proj);
+
+    // one ActiveEdit per (file, user) overlay currently held.
+    assert_eq!(edits.len(), 2);
+    assert!(edits.iter().any(|e| e.file == "main.rs"
+        && e.user_id == user_a
+        && e.branch == "branch-a"));
+    assert!(edits.iter().any(|e| e.file == "lib.rs"
+        && e.user_id == user_b
+        && e.branch == "branch-b"));
+}
+
+#[test]
+fn compute_activity_carries_edited_sections() {
+    let state = test_app_state();
+    let proj = Uuid::new_v4();
+    let user = Uuid::new_v4();
+
+    state.get_or_create_overlay(proj, "main.rs".into(), user, "x".into(), "b".into());
+    {
+        let project = state.repo_states.get(&proj).unwrap();
+        let overlay = project.overlays.get("main.rs").unwrap();
+        let mut uo = overlay.user_contents.get_mut(&user).unwrap();
+        uo.edited_sections = (3, 9);
+    }
+
+    let edits = state.compute_activity(&proj);
+    assert_eq!(edits.len(), 1);
+    assert_eq!(edits[0].edited_sections, (3, 9));
+}
+
+// refresh_overlay_base: updates the cached original_content for a file so the
+// divergence view stays honest after a push, without an extra git call.
+
+#[test]
+fn refresh_overlay_base_updates_original_content() {
+    let state = test_app_state();
+    let proj = Uuid::new_v4();
+    let user = Uuid::new_v4();
+
+    state.get_or_create_overlay(
+        proj,
+        "main.rs".into(),
+        user,
+        "stale base".into(),
+        "feature".into(),
+    );
+
+    state.refresh_overlay_base(&proj, "main.rs", "fresh base from git".into());
+
+    let project = state.repo_states.get(&proj).unwrap();
+    let overlay = project.overlays.get("main.rs").unwrap();
+    assert_eq!(overlay.original_content, "fresh base from git");
+}
+
+#[test]
+fn refresh_overlay_base_noop_for_missing_overlay() {
+    let state = test_app_state();
+    let proj = Uuid::new_v4();
+    let user = Uuid::new_v4();
+
+    state.get_or_create_overlay(proj, "main.rs".into(), user, "base".into(), "b".into());
+
+    // unknown file on a known project: must not panic, must leave the existing
+    // overlay untouched.
+    state.refresh_overlay_base(&proj, "other.rs", "ignored".into());
+
+    let project = state.repo_states.get(&proj).unwrap();
+    assert!(!project.overlays.contains_key("other.rs"));
+    let overlay = project.overlays.get("main.rs").unwrap();
+    assert_eq!(overlay.original_content, "base");
+}

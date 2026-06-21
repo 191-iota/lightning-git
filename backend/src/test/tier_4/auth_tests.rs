@@ -11,8 +11,8 @@ use uuid::Uuid;
 use crate::routes::global_routes;
 use crate::test::helpers::helpers::test_app_state;
 
-/// TF15: GET on a protected /api route without an Authorization header
-/// must be rejected by the auth filter with 401.
+/// GET on a protected /api route without an Authorization header must be
+/// rejected by the auth filter with 401.
 #[actix_web::test]
 async fn protected_route_without_auth_returns_401() {
     let state = web::Data::new(test_app_state());
@@ -32,8 +32,8 @@ async fn protected_route_without_auth_returns_401() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// TF15: GET on a protected /api route with a malformed Authorization header
-/// must be rejected with 401 by the auth filter.
+/// GET on a protected /api route with a malformed Authorization header must
+/// be rejected with 401 by the auth filter.
 #[actix_web::test]
 async fn protected_route_with_malformed_auth_returns_401() {
     let state = web::Data::new(test_app_state());
@@ -54,8 +54,8 @@ async fn protected_route_with_malformed_auth_returns_401() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// TF15: GET on the per-file overlay WS route without a token query param
-/// must be rejected before the websocket handshake completes.
+/// GET on the per-file overlay WS route without a token query param must be
+/// rejected before the websocket handshake completes.
 #[actix_web::test]
 async fn ws_overlay_route_without_token_returns_401() {
     let state = web::Data::new(test_app_state());
@@ -76,8 +76,8 @@ async fn ws_overlay_route_without_token_returns_401() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// TF15: GET on the project activity WS without a token query param must
-/// be rejected by the auth filter, same as any other /api route.
+/// GET on the project activity WS without a token query param must be
+/// rejected by the auth filter, same as any other /api route.
 #[actix_web::test]
 async fn ws_project_activity_route_without_token_returns_401() {
     let state = web::Data::new(test_app_state());
