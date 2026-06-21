@@ -12,7 +12,7 @@ The product is three repos against one backend:
 - [lightning-git-frontend](../frontend): the Vue 3 web dashboard for non-coding stakeholders: Kanban, the live overlay view, org and project management.
 - `lightning-git-vsc` (this repo): the VS Code extension.
 
-It is an HF diploma-thesis prototype. Live site: [lightning-git.com](https://lightning-git.com).
+It is an early-stage, self-hostable project. [lightning-git.com](https://lightning-git.com) serves only the landing page; there is no public instance, you host it yourself.
 
 <p align="center">
   <img src="assets/conflict-live.gif" alt="Two developers edit the same line; the conflict is detected live, before any commit, then cleared by the Notbremse" width="780">
@@ -30,39 +30,21 @@ Predicted merge conflicts paint in the gutter before anyone commits. When two pe
 
 The Notbremse (German for emergency brake, kept as-is) sits at the far left of the status bar as a warning-colored `$(zap) Notbremse` button. It is shown the moment the extension activates and stays there whether or not a session is running, because the moment you need it is exactly when something went wrong. Clicking it shows a modal confirm and then resets your server-side overlay on every file in the project back to the committed base. Its purpose is credential safety: if you pasted a token into a file, the brake clears it from the backend's memory and from teammates' views before it spreads further. It is a reactive control. It only helps if you notice, and it cannot recall edits that already went out. The `lightningGit.debounceMs` setting is the other half of the same safety property, a larger debounce delays broadcasting your local edits, which widens the window to hit the brake before a secret syncs to anyone.
 
-## Conflict prediction, two ways at once
+## Conflict prediction
 
-<p align="center">
-  <img src="assets/conflict-fusion.png" alt="A 60-second authoritative backend poll fused with per-keystroke client synthesis; the same algorithm on both sides, so they merge without flicker" width="900">
-</p>
+The backend is the single source of conflict truth. It recomputes the conflict set whenever a client connects and again on every overlay edit, and pushes the result over the same per-file WebSocket the edits already flow on, as a `conflicts` message. The extension does not compute conflicts itself. An earlier build hand-ported the Rust algorithm into `src/liveConflicts.ts` and fused a local pass with a 60-second `/api/merge` poll; that port and that poll are both gone, along with the `diff` dependency they needed. `OverlaySession` now stores the pushed set as a whole-set replace (`this.conflicts = msg.conflicts`) and renders it, so the editor can never drift from the server and a conflict the backend has resolved simply drops off on the next message.
 
-The genuinely tricky part of this extension is showing conflicts that are both fast and correct, because those two goals pull in opposite directions.
+Rendering is still guarded against thrashing VS Code's IPC, because pushed messages can arrive in bursts while two teammates type. Renders are coalesced through a 60ms `renderTimer`, and `conflictsEqual` does a cheap deep fingerprint of the new set against the last rendered one (lengths, each conflict's range, each hunk's branch, user, range, and content lines), so an identical message returns before touching `setDecorations`, the gutter, or the webview. Two teammates typing at once used to saturate the extension-host channel until VS Code stopped responding to commands; the equality short-circuit plus the edit debounce keeps the channel idle when there is nothing to repaint.
 
-The authoritative answer comes from the backend. `OverlaySession` polls `GET /api/merge/{projectId}/{file}` every 60 seconds (`CONFLICT_POLL_INTERVAL_MS = 60_000`). That poll is the source of truth because the backend can diff against committed branches the editor cannot see, branches no one in this session has open. But a minute is a long time to wait when two people are actively typing, so the extension also computes conflicts on the client.
-
-`src/liveConflicts.ts` is a line-for-line port of the backend's `merge_service.rs`. Its `computeCombinedDiff` walks a `diffLines` diff of each source against the base, builds per-source hunks tagged with branch and `user_id`, and `computeConflicts` groups overlapping base-line ranges and drops the trivial groups, single-source clusters and clusters where every hunk made the identical change. On every teammate keystroke, `doRecomputeAndRender` assembles the overlay set (your local document text plus each teammate's content), calls `synthesizeLiveConflicts`, and fuses the result with the last backend poll through `mergeWithBackend`.
-
-Fusion works because both sides run the same algorithm, so their ranges align exactly. A backend conflict replaces any live conflict whose range overlaps it, using a plain interval test:
-
-```ts
-const overlaps = out.some(
-  (c) => !(lc.base_end < c.base_start || lc.base_start > c.base_end),
-);
-```
-
-Live conflicts at ranges the backend has not yet reported are kept as a fallback. When the next 60-second poll lands, its result is a strict superset and slots in without flicker, there is no jump between two differently-computed conflict sets, because there are not two different computations.
-
-Recompute fires constantly, so the render path is guarded against thrashing VS Code's IPC. Recomputes are coalesced through a 60ms `renderTimer`. Then `conflictsEqual` does a cheap deep fingerprint of the new conflict set against the current one (lengths, each conflict's range, each hunk's branch, user, range and content lines), and `doRecomputeAndRender` stores the new set but returns before touching `setDecorations`, the gutter, or the webview when nothing actually changed. Two teammates typing at once used to fire a synchronous render per keystroke and saturate the extension-host channel until VS Code stopped responding to commands; the equality short-circuit plus the debounce keeps the channel idle when there is nothing to repaint.
-
-One more class of bug shaped the code: focus. When the conflict-panel webview takes focus, `vscode.window.activeTextEditor` is `undefined`, which would silently drop your own content from the synthesis and flip the panel to "No conflicts" mid-divergence. So the session never reads `activeTextEditor`. `findVisibleEditor` scans `visibleTextEditors` for the tracked file, `applyConflictGutter` iterates the visible editors, and `doRecomputeAndRender` resolves the local document by path via `findOpenDocument` over `workspace.textDocuments`. Editor resolution is by tracked path, not by focus.
+One class of bug shaped the render path: focus. When the conflict-panel webview takes focus, `vscode.window.activeTextEditor` is `undefined`, which would silently drop the tracked file mid-divergence. So the session never reads `activeTextEditor`. `findVisibleEditor` scans `visibleTextEditors` for the tracked file, `applyConflictGutter` iterates the visible editors, and the local document is resolved by path via `findOpenDocument` over `workspace.textDocuments`. Editor resolution is by tracked path, not by focus.
 
 ## Session lifecycle
 
-A session is keyed to a project, and the extension finds the project for you rather than asking. On start it reads the workspace's `git remote.origin.url`, normalizes it to `owner/repo`, and matches it against the projects in your organizations, caching the result in `workspaceState` under `lightningGit.projectId`. Projects themselves are created only in the web frontend; the extension links to one that already exists.
+A session is keyed to a project, and the extension finds the project for you rather than asking. On start it reads the workspace's `git remote.origin.url`, normalizes it to `owner/repo` (`normalizeGitUrl` in `src/gitUrl.ts`), and matches it against the projects in your organizations, caching the result in `workspaceState` under `lightningGit.projectId`. Projects themselves are created only in the web frontend; the extension links to one that already exists.
 
-Once a session is running, the active editor drives everything. On each active-editor change, `openDocumentOverlay` reads the current branch with `git rev-parse --abbrev-ref HEAD`, registers the file with the backend over `PUT /api/overlay/{projectId}/{userId}/{file}?branch={branch}` (a 400 is treated as already-registered), fetches the base content once from `origin/main`, deliberately main, not your feature branch, so client synthesis diffs against the same target the backend does, and opens the per-file WebSocket at `{wsUrl}/api/overlay/ws/{projectId}/{userId}/{file}?token={jwt}`. The token rides in the query string because the backend accepts the JWT either as an `Authorization` header or as a `?token=` query param, the fallback that lets browser WebSockets authenticate, and the extension uses the query-param form to share one code path with the web client.
+Once a session is running, the active editor drives everything. On each active-editor change, `openDocumentOverlay` reads the current branch with `git rev-parse --abbrev-ref HEAD`, registers the file with the backend over `PUT /api/overlay/{projectId}/{userId}/{file}?branch={branch}` (a 400 is treated as already-registered), and opens the per-file WebSocket at `{wsUrl}/api/overlay/ws/{projectId}/{userId}/{file}?token={jwt}`. The token rides in the query string because the backend accepts the JWT either as an `Authorization` header or as a `?token=` query param, the fallback that lets browser WebSockets authenticate, and the extension uses the query-param form to share one code path with the web client.
 
-Your own edits flow the other way. `onDidChangeTextDocument` queues a send debounced by `debounceMs` (default 250ms); `sendDocumentChange` then transmits the full document text with `line_section: [0, lineCount-1]` over the same socket. Teammate edits, comments, and the initial snapshot all arrive on that one socket, there is no separate poll for comments. The 60-second `/api/merge` poll is the only recurring backend poll besides the local edit debounce; the only other clocks are short one-shot UI timers (the 60ms render coalesce, the peek auto-hide, the status-bar flash).
+Your own edits flow the other way. `onDidChangeTextDocument` queues a send debounced by `debounceMs` (default 250ms); `sendDocumentChange` then transmits the full document text with `line_section: [0, lineCount-1]` over the same socket. Teammate edits, comments, the initial snapshot, and the predicted-conflict set all arrive on that one socket. There is no separate poll for anything. The only clocks are the local edit debounce and short one-shot UI timers (the 60ms render coalesce, the peek auto-hide, the status-bar flash).
 
 ```mermaid
 sequenceDiagram
@@ -73,21 +55,16 @@ sequenceDiagram
 
     Dev->>Ext: open / switch active file
     Ext->>BE: PUT /api/overlay/.../{file}?branch=...
-    Ext->>BE: GET /api/projects/{id}/file?branch=main (base)
     Ext->>BE: open WS /api/overlay/ws/.../{file}?token=...
     BE-->>Ext: snapshot (comments + all_user_contents)
-
-    loop every 60s
-        Ext->>BE: GET /api/merge/{id}/{file}
-        BE-->>Ext: authoritative conflicts (incl. committed branches)
-    end
+    BE-->>Ext: WS conflicts (recomputed on connect)
 
     Dev->>Ext: type (debounced ~250ms)
     Ext->>BE: WS overlay { content, line_section }
     BE-->>Mate: WS overlay (teammate sees the edit)
     Mate-->>BE: WS overlay (their edit)
     BE-->>Ext: WS overlay
-    Ext->>Ext: synthesize live conflicts, fuse with last poll
+    BE-->>Ext: WS conflicts (recomputed after the edit)
     Ext->>Dev: peek decorations + gutter + status bar
 
     Dev->>Ext: Notbremse
@@ -137,13 +114,11 @@ The endpoints the session uses:
 | Method | Path | Purpose |
 |---|---|---|
 | `PUT` | `/api/overlay/{projectId}/{userId}/{file}?branch={branch}` | register/refresh this file's overlay |
-| `GET` | `/api/overlay/ws/{projectId}/{userId}/{file}?token={jwt}` | per-file overlay WebSocket |
-| `GET` | `/api/projects/{id}/file?branch=main&path=...` | base content for live synthesis |
-| `GET` | `/api/merge/{projectId}/{file}?user_id={userId}` | authoritative conflict poll (errors return `[]`) |
+| `GET` | `/api/overlay/ws/{projectId}/{userId}/{file}?token={jwt}` | per-file overlay WebSocket (edits, comments, snapshot, pushed conflicts) |
 | `DELETE` | `/api/overlay/me/{projectId}` | Notbremse; returns `{ reset: n }` |
 | `GET` | `/api/projects/{id}/members` | resolve `user_id` to display name for labels |
 
-Best-effort getters such as `getMergeConflicts` and `listProjectMembers` swallow errors and return `[]`, because a missing conflict poll or member list should degrade the UI rather than break the session.
+Best-effort getters such as `listProjectMembers` swallow errors and return `[]`, because a missing member list should degrade the UI rather than break the session. WebSocket payloads are parsed through `parseWsMessage`, which validates the shape and returns `null` for anything malformed instead of throwing.
 
 ## Local development
 
@@ -152,33 +127,40 @@ npm ci
 npm run compile      # tsc -p ./
 npm run watch        # tsc -watch -p ./ during development
 npm run lint         # eslint src
+npm test             # vitest run
 ```
 
 Press F5 in VS Code to launch an Extension Development Host. Point `lightningGit.apiUrl` and `lightningGit.wsUrl` at a running [backend](../backend) (defaults assume `localhost:8080`). You will need an account, register from the command palette, and the workspace must be a git checkout whose `origin` matches a project that already exists in the web frontend.
 
-Runtime dependencies are `axios`, `ws`, and `diff` (plus its types). The extension targets VS Code `^1.74.0` and compiles to `./out/extension.js`.
+Runtime dependencies are `axios` and `ws`. The extension targets VS Code `^1.74.0` and compiles to `./out/extension.js`.
+
+## Tests
+
+`vitest run` covers the pure logic that does not need a VS Code host: `conflictsEqual` (the repaint-suppression fingerprint), `normalizeGitUrl` (`gitUrl.ts`, the remote-to-`owner/repo` normalization that drives project detection), `parseWsMessage` (the WebSocket message contract, the stable cross-repo shape), and `getErrorMessage` (`errorMessage.ts`, error-to-string for user-facing notices). The WebSocket message shape is the contract shared with the backend and the web client, so `parseWsMessage` is tested against it directly.
 
 ## Project layout
 
 ```
 src/
   extension.ts        activation, command registration, project auto-detect, Notbremse item
-  overlaySession.ts   the session: WS lifecycle, decorations, status bars, recompute/render
-  liveConflicts.ts    client-side port of the backend merge algorithm
+  overlaySession.ts   the session: WS lifecycle, decorations, status bars, render path
   conflictsEqual.ts   conflict-set fingerprint for repaint suppression
   conflictPanel.ts    the conflict webview panel
+  parseWsMessage.ts   validate and type incoming WebSocket messages
+  gitUrl.ts           normalize a git remote URL to owner/repo
+  errorMessage.ts     error-to-string for user-facing notices
   client.ts           axios instance, endpoints, 401 single-flight refresh + retry
   auth.ts             SecretStorage tokens, register/login/refresh
 ```
 
-CI (`.github/workflows/ci.yml`) runs on push to `main`/`master` and on pull requests, on Node 18 and 20: checkout, `npm ci`, `npm run compile`, `npm run lint`.
+CI lives in the monorepo at `.github/workflows/ci.yml` and runs only when a change touches `extension/`: `npm ci`, `npm run compile`, `npm run lint`, and `npm test`.
 
 ## Scope and limitations
 
-This extension is a diploma-thesis prototype, and a few things are deliberately out of scope.
+This extension is an early-stage prototype, and a few things are deliberately out of scope.
 
-There are no automated tests. There is no test framework, no test script, and no `*.test.ts` files; CI compiles and lints only. The conflict algorithm is the most exposed gap here, because it exists in three implementations, the Rust backend, the frontend's `utils/merge.ts`, and this extension's `liveConflicts.ts`, and only the Rust copy has tests. If the ports drift, nothing catches it.
+The conflict algorithm now lives in exactly one place, the Rust backend, and the extension renders the set the backend pushes over the WebSocket instead of re-deriving it. The two hand-ported client copies that used to drift, and the only reason the algorithm could disagree across surfaces, are gone. The pure logic the extension does still own (URL normalization, message parsing, the repaint fingerprint) is covered by `vitest`; the VS Code host integration itself is not exercised by automated tests.
 
-The backend holds all overlay state in RAM on a single instance, so live state is lost on restart and the system does not scale past one backend process without shared state and cross-instance broadcast. Conflicts come from a 60-second poll rather than a push, which is why the client-side synthesis exists at all; moving that path fully to push is future work. The Notbremse is reactive by nature, as noted above.
+The backend holds all overlay state in RAM on a single instance, so live state is lost on restart and the system does not scale past one backend process without shared state and cross-instance broadcast. The Notbremse is reactive by nature, as noted above.
 
 For the why behind the design, and for the conflict-prediction algorithm in full, see the [backend](../backend) and [lightning-git.com](https://lightning-git.com).
