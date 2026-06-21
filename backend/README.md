@@ -1,16 +1,16 @@
 # lightning-git-backend
 
-![Rust](https://img.shields.io/badge/Rust-1a1a1a?style=flat-square&logo=rust&logoColor=white) ![actix--web](https://img.shields.io/badge/actix--web-1a1a1a?style=flat-square) ![tests](https://img.shields.io/badge/tests-passing-2d6a4f?style=flat-square) ![live](https://img.shields.io/badge/live-lightning--git.com-9b2c2c?style=flat-square)
+![Rust](https://img.shields.io/badge/Rust-1a1a1a?style=flat-square&logo=rust&logoColor=white) ![actix--web](https://img.shields.io/badge/actix--web-1a1a1a?style=flat-square) ![tests](https://img.shields.io/badge/tests-passing-2d6a4f?style=flat-square) ![self-hosted](https://img.shields.io/badge/self--hosted-9b2c2c?style=flat-square)
 
-The Rust engine behind Lightning Git. It clones each GitHub repository as a read-only mirror, holds every in-flight edit in RAM, streams those edits to teammates over per-file WebSockets, and predicts merge conflicts while people are still typing — before any commit exists.
+The Rust engine behind Lightning Git. It clones each GitHub repository as a read-only mirror, holds every in-flight edit in RAM, streams those edits to teammates over per-file WebSockets, and predicts merge conflicts while people are still typing, before any commit exists.
 
 Lightning Git is a realtime visibility layer on top of Git. A team keeps committing and merging exactly as before, but the gap between writing code and pushing it stops being a blind spot: you can see who is editing which file, whose lines are diverging, and which merge conflict is forming, live. The product is three repositories around this one backend:
 
-- `lightning-git-backend` (this repo) — Rust + actix-web. Owns the mirror clones, the overlay state, the realtime layer, and conflict prediction.
-- [lightning-git-frontend](https://github.com/191-iota/lightning-git-frontend) — Vue 3 + TypeScript + Vite + Pinia. The web dashboard for the whole team, including non-coding stakeholders like a Scrum Master.
-- [lightning-git-vsc](https://github.com/191-iota/lightning-git-vsc) — the VS Code extension, the developer's surface inside the editor.
+- `lightning-git-backend` (this repo): Rust + actix-web. Owns the mirror clones, the overlay state, the realtime layer, and conflict prediction.
+- [lightning-git-frontend](../frontend): Vue 3 + TypeScript + Vite + Pinia. The web dashboard for the whole team, including non-coding stakeholders like a Scrum Master.
+- [lightning-git-vsc](../extension): the VS Code extension, the developer's surface inside the editor.
 
-Live at [lightning-git.com](https://lightning-git.com). It is an early-stage, self-hostable project, so read the scope section before treating any of this as production software.
+[lightning-git.com](https://lightning-git.com) serves only the landing page; there is no public instance, you host it yourself. It is an early-stage, self-hostable project, so read the scope section before treating any of this as production software.
 
 <p align="center">
   <img src="assets/conflict-live.gif" alt="Two developers edit the same line; the conflict is detected live, before any commit, then cleared by the Notbremse" width="780">
@@ -36,7 +36,7 @@ Burst reads on the same repo collapse to a single network fetch. `maybe_fetch` c
 
 Git has no concept of a conflict until you merge. This backend detects one while two people are still typing, because it treats live, uncommitted, in-RAM edits as just another diff source.
 
-`calculate_live_diff` in `src/service/merge_service.rs` reads `origin/main:{file}` as the base, then assembles a list of sources. `extract_overlay_file_contents` pulls every `UserOverlay.content` out of the in-memory `DashMap` — that is the raw text a user is typing over their WebSocket, never persisted — and each becomes a source tuple `(branch, Some(user_id), content)`. Branches that have no live overlay are read from `origin/{branch}:{file}` concurrently with `buffer_unordered(10)`, and each becomes `(branch, None, content)`. Live typing and committed branches feed the same algorithm, so prediction and ordinary diffing share one code path. If `main` has no such file yet — a draft not committed to `main` — there is no merge target and the call returns an empty `Vec`.
+`calculate_live_diff` in `src/service/merge_service.rs` reads `origin/main:{file}` as the base, then assembles a list of sources. `extract_overlay_file_contents` pulls every `UserOverlay.content` out of the in-memory `DashMap`, that is the raw text a user is typing over their WebSocket, never persisted, and each becomes a source tuple `(branch, Some(user_id), content)`. Branches that have no live overlay are read from `origin/{branch}:{file}` concurrently with `buffer_unordered(10)`, and each becomes `(branch, None, content)`. Live typing and committed branches feed the same algorithm, so prediction and ordinary diffing share one code path. If `main` has no such file yet, a draft not committed to `main`, there is no merge target and the call returns an empty `Vec`.
 
 <p align="center">
   <img src="assets/conflict-prediction.png" alt="Each source is diffed against origin/main; overlapping edits cluster; a cluster is a conflict only when the sources disagree" width="860">
@@ -46,9 +46,9 @@ Git has no concept of a conflict until you merge. This backend detects one while
 
 `compute_conflicts` then sorts all hunks by `(base_start, base_end)` and does a single forward sweep. If a hunk's `base_start` is at or before the running end of the current group it joins that group and the running end extends via `cmp::max(running_end, hunk.base_end)`; otherwise it starts a new group. That `max` is what makes the grouping transitive: a long early hunk pulls in later hunks that overlap only its extended boundary, so if A overlaps B and B overlaps C, all three land in one cluster even when A and C don't touch. It is the classic sorted interval-merge, giving the same transitive closure a union-find would, in `O(n log n)` and without the data structure, because line ranges are one-dimensional. The test `three_branches_overlapping_produces_single_conflict_group` pins this with hunks `[0,3]`, `[2,5]`, `[4,7]` collapsing to one group of three.
 
-Two rules decide whether a cluster is actually a conflict. The source set is built as a `HashSet` of `(branch, user_id)` rather than just `branch`, so two people editing the *same* branch with divergent live content count as two distinct sources and conflict with each other — the most common real-time collision, and one that committed-git diffing can never see. A cluster needs at least two distinct sources to survive. Then `hunk_signature` returns `(base_start, base_end, &content)`, and if every hunk in the cluster shares the first one's signature the cluster is dropped, because two branches that made the identical edit will merge cleanly and git would auto-resolve it anyway.
+Two rules decide whether a cluster is actually a conflict. The source set is built as a `HashSet` of `(branch, user_id)` rather than just `branch`, so two people editing the *same* branch with divergent live content count as two distinct sources and conflict with each other, the most common real-time collision, and one that committed-git diffing can never see. A cluster needs at least two distinct sources to survive. Then `hunk_signature` returns `(base_start, base_end, &content)`, and if every hunk in the cluster shares the first one's signature the cluster is dropped, because two branches that made the identical edit will merge cleanly and git would auto-resolve it anyway.
 
-Conflicts are pushed, not polled. The backend recomputes `calculate_live_diff` when a client connects and again on every overlay edit, and broadcasts the result as `WsBroadcast::Conflicts { file, conflicts }` over the same per-file overlay WebSocket the edits already flow through, so a client renders the fresh set without asking for it and replaces its whole conflict list on each message. The recompute also refreshes each overlay's cached base from the fresh `main` read it just did and re-broadcasts the activity snapshot, reusing the unavoidable fetch instead of paying for a second round-trip. Each call site `.await`s `calculate_live_diff` with no `DashMap` guard held, because it takes a write guard on the same shard via `refresh_overlay_base` and a guard held across the await would deadlock against it — the same trap the old merge endpoint had to document.
+Conflicts are pushed, not polled. The backend recomputes `calculate_live_diff` when a client connects and again on every overlay edit, and broadcasts the result as `WsBroadcast::Conflicts { file, conflicts }` over the same per-file overlay WebSocket the edits already flow through, so a client renders the fresh set without asking for it and replaces its whole conflict list on each message. The recompute also refreshes each overlay's cached base from the fresh `main` read it just did and re-broadcasts the activity snapshot, reusing the unavoidable fetch instead of paying for a second round-trip. Each call site `.await`s `calculate_live_diff` with no `DashMap` guard held, because it takes a write guard on the same shard via `refresh_overlay_base` and a guard held across the await would deadlock against it, the same trap the old merge endpoint had to document.
 
 ## The overlay model
 
@@ -89,9 +89,9 @@ let skip = !echo_self
 if skip { continue; }
 ```
 
-Only the `Overlay` variant is filtered. A typist never sees their own keystrokes bounced back to fight their cursor, but `CommentCreated`, `CommentDeleted`, and `Snapshot` fall through to `_ => false` and are always delivered — the originating client needs the server-assigned comment id and `created_at` back, and one boolean expression solves both the echo problem and the id round-trip without a second channel. `echo_self` comes from `req.query_string().contains("echo=true")`, which the web viewer sets so it sees its own edits and which makes the socket observable in tests.
+Only the `Overlay` variant is filtered. A typist never sees their own keystrokes bounced back to fight their cursor, but `CommentCreated`, `CommentDeleted`, and `Snapshot` fall through to `_ => false` and are always delivered, the originating client needs the server-assigned comment id and `created_at` back, and one boolean expression solves both the echo problem and the id round-trip without a second channel. `echo_self` comes from `req.query_string().contains("echo=true")`, which the web viewer sets so it sees its own edits and which makes the socket observable in tests.
 
-On WebSocket close, `user_contents` is deliberately *not* removed, because one `user_id` can hold several sockets at once — a web viewer and a VS Code editor — and first-close cleanup would wipe the other session's live data.
+On WebSocket close, `user_contents` is deliberately *not* removed, because one `user_id` can hold several sockets at once, a web viewer and a VS Code editor, and first-close cleanup would wipe the other session's live data.
 
 ## Notbremse
 
@@ -99,7 +99,7 @@ On WebSocket close, `user_contents` is deliberately *not* removed, because one `
   <img src="assets/notbremse.png" alt="The Notbremse resets the caller's overlays on every file back to the committed base, instantly and without touching git" width="900">
 </p>
 
-The Notbremse (the German term for an emergency brake, kept as a product name) is a panic button. `DELETE /api/overlay/me/{proj_id}` resets the calling user's in-flight edits on every file in the project back to the committed base and tells teammates to revert. It exists for credential safety: if a secret gets typed into an overlay, one button discards it everywhere before it sits any longer in backend RAM. It is a reactive control, so it only works if the user notices and it cannot unsend edits already broadcast — but the dwell time is bounded by RAM, and the reset itself is instant.
+The Notbremse (the German term for an emergency brake, kept as a product name) is a panic button. `DELETE /api/overlay/me/{proj_id}` resets the calling user's in-flight edits on every file in the project back to the committed base and tells teammates to revert. It exists for credential safety: if a secret gets typed into an overlay, one button discards it everywhere before it sits any longer in backend RAM. It is a reactive control, so it only works if the user notices and it cannot unsend edits already broadcast, but the dwell time is bounded by RAM, and the reset itself is instant.
 
 ```rust
 pub fn reset_user_overlays(&self, project_id: &Uuid, user_id: &Uuid) -> usize {
@@ -135,7 +135,7 @@ Authentication is delegated to Supabase. A single `auth_filter` middleware on th
 
 On auth failure the middleware returns the 401 as `Ok(ServiceResponse)`, not `Err`. Returning `Err` would skip the outer CORS wrap and the browser would see a CORS error masking the real cause; threading the response back as `Ok` keeps `Access-Control-Allow-Origin` attached.
 
-Authorization lives in four declarative macros — `require_project_permission!`, `require_project_admin!`, `require_org_permission!`, `require_org_owner!` — that each expand to a match and `return` an `HttpResponse` directly from the handler on failure, so the gate is one readable line at the top of each protected handler and easy to spot if missing. They all funnel through two functions in `permission_service.rs`. `check_project_permission` first calls `is_org_owner_of_project` and short-circuits with `Ok(true)`, so an org owner passes every project check without a `project_members` row, and the "owner sees everything" rule lives in exactly one place instead of being scattered across handlers.
+Authorization lives in four declarative macros, `require_project_permission!`, `require_project_admin!`, `require_org_permission!`, `require_org_owner!`, that each expand to a match and `return` an `HttpResponse` directly from the handler on failure, so the gate is one readable line at the top of each protected handler and easy to spot if missing. They all funnel through two functions in `permission_service.rs`. `check_project_permission` first calls `is_org_owner_of_project` and short-circuits with `Ok(true)`, so an org owner passes every project check without a `project_members` row, and the "owner sees everything" rule lives in exactly one place instead of being scattered across handlers.
 
 The data plane and the auth plane use different Supabase keys. The `SupabaseClient` uses `SUPABASE_API_KEY` (service_role) because RLS on `profiles` only grants `SELECT` to anon and a write with the wrong key silently affects zero rows; the `AuthClient` uses `SUPABASE_ANON_KEY` for gotrue calls. The trusted server bypasses RLS for data access and enforces authorization in Rust through the macros instead.
 
@@ -157,7 +157,7 @@ The rest cover projects, tasks, organizations, members, and the file tree. The a
 
 ## Persistence
 
-Six Postgres tables in Supabase: `profiles`, `organization`, `organization_members`, `project`, `task`, and `project_members`. No overlay, comment, or active-edit state is ever written here — that lives only in the `AppState` DashMaps. `organization_members.role` is checked against `owner|member`, `project_members.role` against `admin|member`, and `task.kanban_column` against `todo|in_progress|review|merged`. A trigger `on_auth_user_created` runs `handle_new_user()` to auto-create a `profiles` row when an auth user is inserted. The canonical DDL is [`src/supabase/table_creation.sql`](src/supabase/table_creation.sql).
+Six Postgres tables in Supabase: `profiles`, `organization`, `organization_members`, `project`, `task`, and `project_members`. No overlay, comment, or active-edit state is ever written here, that lives only in the `AppState` DashMaps. `organization_members.role` is checked against `owner|member`, `project_members.role` against `admin|member`, and `task.kanban_column` against `todo|in_progress|review|merged`. A trigger `on_auth_user_created` runs `handle_new_user()` to auto-create a `profiles` row when an auth user is inserted. The canonical DDL is [`src/supabase/table_creation.sql`](src/supabase/table_creation.sql).
 
 ## Running locally
 
@@ -195,19 +195,19 @@ CORS is hard-wired to allow `http://localhost:5173` only, with methods GET/POST/
 ## Testing
 
 <p align="center">
-  <img src="assets/test-pyramid.png" alt="63 tests across four tiers: pure logic, state transitions, git subprocess, and HTTP handlers" width="860">
+  <img src="assets/test-pyramid.png" alt="73 tests across four tiers: pure logic, state transitions, git subprocess, and HTTP handlers" width="860">
 </p>
 
-Tests live under `src/test/` in four on-disk tiers, 63 functions in total. Run the fast tiers with `cargo test --lib` and the full suite, including the git-subprocess tests, with `cargo test`.
+Tests live under `src/test/` in four on-disk tiers, 73 functions in total. Run the fast tiers with `cargo test --lib` and the full suite, including the git-subprocess tests, with `cargo test`.
 
 | Tier | What | Count |
 |---|---|---|
-| 1 | Pure logic — diff decomposition, conflict grouping, no IO | 20 |
-| 2 | State management — real `AppState`/`DashMap`, no net or fs | 20 |
-| 3 | Filesystem/subprocess — the real `git` binary against `tempfile` repos | 14 |
-| 4 | HTTP handlers — `#[actix_web::test]`, real routing, mocked Supabase | 9 |
+| 1 | Pure logic, diff decomposition, conflict grouping, no IO | 22 |
+| 2 | State management, real `AppState`/`DashMap`, no net or fs | 25 |
+| 3 | Filesystem/subprocess, the real `git` binary against `tempfile` repos | 17 |
+| 4 | HTTP handlers, `#[actix_web::test]`, real routing, mocked Supabase | 9 |
 
-A fifth tier of WebSocket end-to-end tests is described in `src/test/README.md` but is not implemented. Because the conflict algorithm is the heart of the product, Tier 1 nails its edge cases directly — same-edit-is-not-a-conflict, single-source clusters dropped, edge-touching ranges merged into one group, the three-branch transitive chain.
+A fifth tier of WebSocket end-to-end tests is described in `src/test/README.md` but is not implemented. Because the conflict algorithm is the heart of the product, Tier 1 nails its edge cases directly, same-edit-is-not-a-conflict, single-source clusters dropped, edge-touching ranges merged into one group, the three-branch transitive chain.
 
 ## Project layout
 
@@ -229,6 +229,6 @@ src/
 
 This is an early-stage prototype, not production software, and several things are deferred on purpose. Overlay state lives in an in-memory DashMap on a single instance and the broadcast is in-process, so running more than one backend would need shared state and cross-instance fan-out, for example via Redis Pub/Sub. The cloned repo is ephemeral in the container and re-fetched on every deploy, which slows cold start for large or numerous repos; a persistent volume would help.
 
-The conflict algorithm lives in exactly one place now, this Rust backend: the frontend and the extension render the conflict set the backend pushes over the WebSocket instead of re-deriving it, so the two hand-ported copies that used to drift are gone. CORS is hard-wired as noted above. There is no error tracking like Sentry and no automated CI running the tiers on push; logging is plaintext to stdout via `env_logger` and the Actix `Logger`. Overlay content is protected in transit by TLS but sits in plaintext in backend RAM; application-level encryption is planned, not built. There is no rate limiting on public endpoints and no secret-rotation strategy. Live edits, predicted conflicts, and comments now all push over the per-file WebSocket; the earlier conflict poll is gone.
+The conflict algorithm lives in exactly one place now, this Rust backend: the frontend and the extension render the conflict set the backend pushes over the WebSocket instead of re-deriving it, so the two hand-ported copies that used to drift are gone. CORS is hard-wired as noted above. There is no error tracking like Sentry; logging is plaintext to stdout via `env_logger` and the Actix `Logger`. CI runs the test tiers on every push that touches `backend/` (see the monorepo's `.github/workflows/ci.yml`). Overlay content is protected in transit by TLS but sits in plaintext in backend RAM; application-level encryption is planned, not built. There is no rate limiting on public endpoints and no secret-rotation strategy. Live edits, predicted conflicts, and comments now all push over the per-file WebSocket; the earlier conflict poll is gone.
 
 What runs today is the read-only mirror, the in-RAM overlays, the realtime layer, conflict prediction, the Notbremse, multi-tenant isolation, GitHub OAuth for private repos, and the backend test suite across four tiers.

@@ -51,7 +51,7 @@ pub async fn calculate_live_diff(
     let mut active_branches = git_service::list_remote_branches(base).await?;
 
     let file_overlays = extract_overlay_file_contents(file_name.clone(), project_id, state)?;
-    // (branch, user_id, content) — user_id is Some only for live-overlay rows.
+    // (branch, user_id, content), user_id is Some only for live-overlay rows.
     let mut sources: Vec<(String, Option<uuid::Uuid>, String)> = Vec::new();
     file_overlays.into_iter().for_each(|f| {
         if active_branches.contains(&f.branch) {

@@ -415,7 +415,7 @@ export class OverlaySession {
   private showPeek(): void {
     // resolve by tracked file, not focus. when the conflict panel webview
     // has focus, activeTextEditor is undefined and clicking "editing" did
-    // nothing — same bug pattern that bit applyConflictGutter earlier.
+    // nothing, same bug pattern that bit applyConflictGutter earlier.
     const editor = this.findVisibleEditor();
     if (!editor || this.teammateChanges.size === 0) {
       return;
@@ -432,7 +432,7 @@ export class OverlaySession {
         contentLines.pop();
       }
       const tag = userId.slice(0, 8);
-      // walk every teammate line (not just teammate.lines range — which
+      // walk every teammate line (not just teammate.lines range, which
       // the sender broadcasts as their FULL editor extent, capped to the
       // receiver's editor by the old clamp). this exposed only the first
       // differing line in the receiver's bounds; lines beyond the
@@ -451,7 +451,7 @@ export class OverlaySession {
           },
         });
       }
-      // teammate has more lines than the receiver — append a single
+      // teammate has more lines than the receiver, append a single
       // trailing decoration on the last receiver line listing the extras
       // so they dont stay invisible.
       if (contentLines.length > editorLineCount && editorLineCount > 0) {
@@ -629,7 +629,7 @@ export class OverlaySession {
         // for a pure-insert conflict (base_start === base_end, no base lines
         // consumed), the naive base_end - 1 is < safeStart and the loop
         // skips. clamp with Math.max(safeStart, …) so we always highlight
-        // the insertion point itself — without this, overlay-vs-overlay
+        // the insertion point itself, without this, overlay-vs-overlay
         // inserts had zero decorations until the 60s poll surfaced an
         // unrelated committed-branch conflict at a non-insert range.
         const rawEnd = Math.min(c.base_end - 1, editor.document.lineCount - 1);
@@ -679,7 +679,7 @@ export class OverlaySession {
   private renderCommentDecorations(): void {
     // resolve by tracked file, not focus. activeTextEditor is undefined when
     // the conflict panel webview (or any non-editor view) has focus, and is a
-    // DIFFERENT document when the user tabs to another file — both cases would
+    // DIFFERENT document when the user tabs to another file, both cases would
     // land the comment decoration on the wrong document or drop it entirely.
     const editor = this.findVisibleEditor();
     if (!editor) {
@@ -788,7 +788,7 @@ export class OverlaySession {
     for (const [branch, versions] of byBranch) {
       if (!first) md.appendMarkdown("\n\n");
       first = false;
-      md.appendMarkdown(`**\`${branch}\`** — ${versions.size} version${versions.size === 1 ? "" : "s"}\n\n`);
+      md.appendMarkdown(`**\`${branch}\`**, ${versions.size} version${versions.size === 1 ? "" : "s"}\n\n`);
       let vi = 0;
       for (const v of versions.values()) {
         if (vi > 0) md.appendMarkdown("\n\n");

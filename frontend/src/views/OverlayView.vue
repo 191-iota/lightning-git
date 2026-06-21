@@ -180,8 +180,8 @@ function describeContent(content: string[]): string {
 
 // collapse whitespace differences for the dedupe signature. two versions
 // that render visually identical (e.g. both as just "huh") sometimes carry
-// different array shapes — one ["huh"], another ["", "huh"] or
-// ["huh", "", ""] from split-on-newline quirks — and would otherwise be
+// different array shapes, one ["huh"], another ["", "huh"] or
+// ["huh", "", ""] from split-on-newline quirks, and would otherwise be
 // emitted as a fake "2 versions, both huh" conflict. trim() of the
 // joined string normalizes leading/trailing whitespace including newlines.
 function normalizeContent(content: string[]): string {
@@ -337,7 +337,7 @@ async function openFile(path: string) {
   try {
     const { data } = await api.get<string>(
       // base content for merge analysis is origin/main (the merge target),
-      // NOT the user's feature branch — matching the backend, which always
+      // NOT the user's feature branch, matching the backend, which always
       // diffs against main. (Conflict detection runs server-side and is
       // pushed over the WS; this base only feeds the local projection.)
       `/api/projects/${projectId.value}/file?branch=main&path=${encodeURIComponent(path)}`,
@@ -533,7 +533,7 @@ function handleMessage(msg: WsMessage) {
     case "conflicts":
       // backend pushes the full conflict set for this file on every recompute;
       // replace wholesale (immutable, mirroring the snapshot arm). no
-      // client-side union/fallback — the backend's set is authoritative.
+      // client-side union/fallback, the backend's set is authoritative.
       mergeConflicts.value = [...msg.conflicts];
       return;
     case "overlay": {

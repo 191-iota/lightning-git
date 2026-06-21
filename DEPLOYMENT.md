@@ -12,10 +12,10 @@ lightning-git/
 ├── backend/     Rust / actix-web API + WebSocket hub (Docker)
 ├── frontend/    Vue 3 + Vite single-page app (static build)
 ├── extension/   VS Code extension (packaged with vsce)
-└── landing/     Static marketing page — lightning-git.com (no build)
+└── landing/     Static marketing page, lightning-git.com (no build)
 ```
 
-## backend/ — Docker
+## backend/, Docker
 
 The backend ships as a container. The `Dockerfile` lives in `backend/` and its
 `COPY` paths are relative to that directory, so the only thing a host needs is the
@@ -35,7 +35,7 @@ docker build -t lightning-git-backend backend/
 On a PaaS (Fly.io, Render, Railway): set the service's **root directory** to
 `backend` and let it use the in-repo Dockerfile.
 
-## frontend/ — static SPA
+## frontend/, static SPA
 
 A Vite build that produces a static bundle in `frontend/dist/`.
 
@@ -47,7 +47,7 @@ A Vite build that produces a static bundle in `frontend/dist/`.
 On Vercel / Netlify / Cloudflare Pages: set the project's **root directory** to
 `frontend`, build command `npm run build`, output directory `dist`.
 
-## landing/ — static page
+## landing/, static page
 
 A single self-contained `index.html` with inline CSS/JS. No build step.
 
@@ -57,7 +57,7 @@ A single self-contained `index.html` with inline CSS/JS. No build step.
 - This is what answers on lightning-git.com; the custom domain is configured at the
   host, not in the repo (there is no `CNAME`).
 
-## extension/ — VS Code Marketplace
+## extension/, VS Code Marketplace
 
 Not a server deployment; packaged and published from its own folder.
 
@@ -69,7 +69,7 @@ npx vsce package      # -> a .vsix
 npx vsce publish      # requires a publisher + PAT
 ```
 
-## Migration note — repointing live deploys
+## Migration note, repointing live deploys
 
 These four packages previously lived in four standalone repositories, which are
 now archived. Archiving makes a repo read-only; **a site that is already deployed

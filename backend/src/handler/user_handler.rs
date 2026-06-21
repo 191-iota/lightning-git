@@ -259,7 +259,7 @@ pub async fn github_callback(
                     user_repository::get_access_token(&state.sb_client, &uid).await
                 {
                     info!(
-                        "Token already stored for user {} (duplicate callback) — treating as success",
+                        "Token already stored for user {} (duplicate callback), treating as success",
                         &query.state
                     );
                     return HttpResponse::Ok()
