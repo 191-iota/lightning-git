@@ -75,6 +75,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "test": "vitest run",
     "lint": "eslint src"
   },
   "dependencies": {
@@ -87,6 +88,7 @@
     "@types/ws": "^8.18.1",
     "eslint": "^9.39.3",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.1"
+    "typescript-eslint": "^8.56.1",
+    "vitest": "^4.1.9"
   }
 }
