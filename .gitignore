@@ -6,3 +6,6 @@
 *.log
 .idea/
 *.swp
+
+# local Docker stack secrets (see .env.example)
+/.env
