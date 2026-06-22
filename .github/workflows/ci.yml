@@ -23,7 +23,6 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       extension: ${{ steps.filter.outputs.extension }}
-      landing: ${{ steps.filter.outputs.landing }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -38,9 +37,6 @@ jobs:
               - '.github/workflows/ci.yml'
             extension:
               - 'extension/**'
-              - '.github/workflows/ci.yml'
-            landing:
-              - 'landing/**'
               - '.github/workflows/ci.yml'
 
   backend:
@@ -100,18 +96,3 @@ jobs:
       - run: npm run compile
       - run: npm run lint
       - run: npm test
-
-  landing:
-    needs: changes
-    if: needs.changes.outputs.landing == 'true'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: landing
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Validate index.html
-        run: npx -y html-validate index.html

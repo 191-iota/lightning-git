@@ -15,7 +15,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=builder /app/target/release/lightning_git /app/lightning_git
 
-# ephemeral clone dir, gets repopulated on every deploy
+# ephemeral clone dir; the backend populates it as projects are added
 RUN mkdir -p /repos
 ENV GIT_REPO_DEV=/repos
 ENV HOST=0.0.0.0
