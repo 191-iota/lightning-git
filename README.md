@@ -26,6 +26,30 @@ The conflict algorithm lives in exactly one place, the backend. It computes the 
 
 The marketing page is not part of the product and is not in this repository. It lives on its own at [lightning-git-landing](https://github.com/191-iota/lightning-git-landing) and is served at [lightning-git.com](https://lightning-git.com); that domain is the landing page only, not a running instance you can sign into.
 
+## What it looks like
+
+The web dashboard's live view: two people editing the same line on one branch, with the forming merge conflict laid out as each person's version, who is editing right now, and the Notbremse, all before anyone commits.
+
+<p align="center">
+  <img src="assets/showcase-dashboard.png" alt="The Lightning Git web dashboard live view showing a merge conflict between two editors on one branch, each version attributed, an active-editors panel, and the Notbremse" width="900">
+</p>
+
+The same conflict inside VS Code, where the work actually happens. Each side is tinted in the editor and the affected line carries an inline badge naming the branch it clashes on.
+
+<p align="center">
+  <img src="assets/showcase-editor-conflict.png" alt="Two VS Code editors side by side; the same line differs and is marked with an inline badge reading conflict on 1-demo-issue" width="900">
+</p>
+
+Every conflicting version is credited to its author, and teammates can talk it out on the line itself. Comments render inline in the editor too.
+
+<p align="center">
+  <img src="assets/showcase-conflict-comment.png" alt="A merge-conflict card crediting each author's live version, with a reply being written underneath" width="660">
+</p>
+
+<p align="center">
+  <img src="assets/showcase-editor-inline.png" alt="A VS Code line showing the conflict badge alongside a teammate's comment rendered inline" width="900">
+</p>
+
 ## How conflict prediction works
 
 <p align="center">
