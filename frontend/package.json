@@ -1,7 +1,7 @@
 {
   "name": "hf-lightning-git-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "license": "MIT",
   "author": "191-iota",
   "type": "module",
