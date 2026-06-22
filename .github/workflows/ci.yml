@@ -15,6 +15,10 @@ concurrency:
 
 permissions:
   contents: read
+  # dorny/paths-filter lists a PR's changed files via the API on
+  # pull_request events, which needs pull-requests: read (push events use
+  # git diff and only need contents: read).
+  pull-requests: read
 
 jobs:
   changes:
