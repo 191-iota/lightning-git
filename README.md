@@ -1,6 +1,8 @@
 # Lightning Git
 
-![CI](https://img.shields.io/badge/CI-path--filtered-1a1a1a?style=flat-square) ![tests](https://img.shields.io/badge/tests-passing-2d6a4f?style=flat-square) ![self-hosted](https://img.shields.io/badge/self--hosted-9b2c2c?style=flat-square)
+![alpha](https://img.shields.io/badge/status-alpha-9b2c2c?style=flat-square) ![CI](https://img.shields.io/badge/CI-path--filtered-1a1a1a?style=flat-square) ![tests](https://img.shields.io/badge/tests-passing-2d6a4f?style=flat-square) ![self-hosted](https://img.shields.io/badge/self--hosted-9b2c2c?style=flat-square)
+
+> Lightning Git is an alpha prototype that came out of a thesis project. It runs and you can self-host it, but it is early and not production software, so expect rough edges and changes.
 
 Git only shows you a teammate's work once they commit and push. Everything before that, the file they have open right now, the function they are halfway through rewriting, the line two of you are both editing on different branches, is invisible until it lands as a conflict in a pull request. Lightning Git closes that gap. It mirrors a repository read-only, holds each person's uncommitted edits as live overlay state in the backend's RAM, and streams that state to the rest of the team, so you can see who is editing which file, where two branches are diverging, and which merge conflict is forming, while everyone is still typing and before any commit exists.
 
