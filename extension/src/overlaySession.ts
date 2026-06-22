@@ -37,9 +37,13 @@ export class OverlaySession {
   // setDecorations + webview html and saturate the IPC channel.
   private lastRendered: MergeConflict[] = [];
   private comments: Comment[] = [];
-  // user_id -> display_name, refreshed when the session starts. fallback to
-  // a short uuid prefix for users not in the cache.
+  // user_id -> display_name, refreshed when the session starts and again
+  // whenever an author we have no name for shows up. fallback to a short uuid
+  // prefix for users still not in the cache.
   private members = new Map<string, string>();
+  // guards for the lazy name resolution in maybeResolveUnknownAuthor.
+  private pendingMemberRefresh = false;
+  private readonly resolveAttempted = new Set<string>();
 
   private readonly statusBarItem: vscode.StatusBarItem;
   private readonly conflictStatusBarItem: vscode.StatusBarItem;
@@ -389,6 +393,10 @@ export class OverlaySession {
             lines: u.edited_sections,
             lastUpdate: Date.now(),
           });
+          this.maybeResolveUnknownAuthor(u.user_id);
+        }
+        for (const c of msg.comments) {
+          this.maybeResolveUnknownAuthor(c.user_id);
         }
         this.updateStatusBar();
         return;
@@ -405,6 +413,7 @@ export class OverlaySession {
           ...this.comments.filter((c) => c.id !== msg.id),
           { id: msg.id, user_id: msg.user_id, line: msg.line, text: msg.text, created_at: msg.created_at },
         ];
+        this.maybeResolveUnknownAuthor(msg.user_id);
         this.renderCommentDecorations();
         this.notifyNewComment({
           id: msg.id,
@@ -425,6 +434,7 @@ export class OverlaySession {
           lines: msg.line_section,
           lastUpdate: Date.now(),
         });
+        this.maybeResolveUnknownAuthor(msg.user_id);
         this.updateStatusBar();
         this.flashStatusBar();
         return;
@@ -722,11 +732,50 @@ export class OverlaySession {
     );
   }
 
-  /// Refreshes the cached project members map. Best-effort: failure leaves the
-  /// cache untouched and authors fall back to a short uuid prefix.
+  /// Refreshes the cached project members map and repaints anything that shows
+  /// an author, so a uuid fallback flips to the real name as soon as the names
+  /// arrive. Best-effort: a failure leaves the cache untouched.
   private async refreshMembers(): Promise<void> {
-    const list = await this.client.listProjectMembers(this.projectId);
-    this.members = new Map(list.map((m: ProjectMember) => [m.id, m.display_name]));
+    try {
+      const list = await this.client.listProjectMembers(this.projectId);
+      this.members = new Map(
+        list
+          .filter((m: ProjectMember) => Boolean(m.display_name && m.display_name.trim().length > 0))
+          .map((m) => [m.id, m.display_name] as const),
+      );
+    } catch {
+      return;
+    }
+    // names may have just become available: repaint the status bar, comment
+    // decorations, the conflict gutter/panel, and the peek if it is showing,
+    // so anything painted with a uuid fallback flips to the real name.
+    this.updateStatusBar();
+    this.renderCommentDecorations();
+    this.lastRendered = [];
+    this.renderConflicts();
+    if (this.showingPeek) {
+      this.showPeek();
+    }
+  }
+
+  // When an author id appears that we have no name for (a teammate who joined
+  // after the session started, say), refetch the member list once so the uuid
+  // fallback can resolve. Guarded so an id we already failed to resolve, or a
+  // refetch already in flight, does not spam the endpoint.
+  private maybeResolveUnknownAuthor(userId: string): void {
+    if (
+      userId === this.userId
+      || this.members.has(userId)
+      || this.resolveAttempted.has(userId)
+      || this.pendingMemberRefresh
+    ) {
+      return;
+    }
+    this.resolveAttempted.add(userId);
+    this.pendingMemberRefresh = true;
+    void this.refreshMembers().finally(() => {
+      this.pendingMemberRefresh = false;
+    });
   }
 
   /// Returns the rendered author name for a comment: "you" for the caller,
