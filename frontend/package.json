@@ -2,6 +2,8 @@
   "name": "hf-lightning-git-frontend",
   "private": true,
   "version": "0.0.0",
+  "license": "MIT",
+  "author": "191-iota",
   "type": "module",
   "scripts": {
     "dev": "vite",

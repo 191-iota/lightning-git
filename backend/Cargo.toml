@@ -2,6 +2,8 @@
 name = "lightning_git"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+authors = ["191-iota"]
 
 [dependencies]
 actix-web = "4.12.1"

@@ -74,6 +74,8 @@ There is no public instance you can sign into. To use Lightning Git you host it 
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) checks only the packages a change touches. The backend builds and runs its tests, the frontend type-checks and builds and tests, and the extension compiles and lints and tests.
 
-## Authorship
+## License and attribution
 
-This repository carries its complete development history, every commit from all three packages, which is itself the record of how it was built. Releases are published as signed tags; see [AUTHORSHIP.md](AUTHORSHIP.md) for how to verify them and what the signature proves. Licensed under [MIT](backend/LICENSE), Copyright (c) 2026 191-iota.
+Lightning Git is released under the [MIT License](LICENSE), Copyright (c) 2026 191-iota, and each package also carries its own copy. MIT lets you use, fork, change, and build on the code, including in commercial work. The one thing it asks in return is attribution. Every copy or substantial portion, including a fork or an expanded version, must keep the license text and the `Copyright (c) 2026 191-iota` notice intact, so the original authorship stays with the code wherever it goes. The license does not oblige you to credit 191-iota in your product's interface, only to preserve the copyright and license notice in the source.
+
+The repository also carries its complete development history, every commit from all three packages, which is itself the record of how it was built. Releases are published as signed tags; see [AUTHORSHIP.md](AUTHORSHIP.md) for how to verify them and what the signature proves.

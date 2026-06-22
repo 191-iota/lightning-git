@@ -3,6 +3,8 @@
   "displayName": "Lightning Git",
   "description": "VSCode extension for lightning-git",
   "version": "0.0.1",
+  "license": "MIT",
+  "author": "191-iota",
   "engines": {
     "vscode": "^1.74.0"
   },

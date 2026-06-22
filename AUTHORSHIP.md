@@ -29,4 +29,4 @@ git log --reverse --format='%ci %an %s' | head   # the earliest commits, with da
 
 ## For anyone reusing this code
 
-You are welcome to reuse it under the MIT terms. Keep the `LICENSE` and its copyright line. This file is a record of origin.
+You are welcome to reuse it under the MIT terms, including forking it and building something larger on top. The one requirement is attribution. Keep the `LICENSE` file and its `Copyright (c) 2026 191-iota` line in your copy or your fork, so the original authorship stays with the code. This file itself is a record of origin.
