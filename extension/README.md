@@ -4,15 +4,7 @@
 
 The Lightning Git VS Code extension. It is the developer's surface for Lightning Git: a live session that paints teammates' uncommitted edits and predicted merge conflicts directly into the editor, and an always-present Notbremse to wipe your live state if you typed something you shouldn't have.
 
-Lightning Git is a real-time visibility layer on top of Git. Git tracks finished states (commits) but says nothing about the hours or days between them, when someone is mid-edit on a file you are also touching and a conflict is quietly forming. Lightning Git fills that gap by mirroring each repo read-only on a backend, holding everyone's in-flight edits as ephemeral overlay state in RAM, and streaming that state to the people who need to see it. This extension is where the code actually lives, so it is where that information is most useful.
-
-The product is three repos against one backend:
-
-- [lightning-git-backend](../backend): the Rust/actix-web server that owns the read-only repo clones, the in-RAM overlay state, the WebSocket realtime layer, and merge-conflict prediction.
-- [lightning-git-frontend](../frontend): the Vue 3 web dashboard for non-coding stakeholders: Kanban, the live overlay view, org and project management.
-- `lightning-git-vsc` (this repo): the VS Code extension.
-
-It is an early-stage, self-hostable project. [lightning-git.com](https://lightning-git.com) serves only the landing page; there is no public instance, you host it yourself.
+This extension is one of three packages in the [Lightning Git monorepo](../README.md), alongside the [backend](../backend) (Rust / actix-web) and the [frontend](../frontend) Vue web dashboard. It is an early-stage, self-hostable project.
 
 <p align="center">
   <img src="assets/conflict-live.gif" alt="Two developers edit the same line; the conflict is detected live, before any commit, then cleared by the Notbremse" width="780">
@@ -136,7 +128,7 @@ Runtime dependencies are `axios` and `ws`. The extension targets VS Code `^1.74.
 
 ## Tests
 
-`vitest run` covers the pure logic that does not need a VS Code host: `conflictsEqual` (the repaint-suppression fingerprint), `normalizeGitUrl` (`gitUrl.ts`, the remote-to-`owner/repo` normalization that drives project detection), `parseWsMessage` (the WebSocket message contract, the stable cross-repo shape), and `getErrorMessage` (`errorMessage.ts`, error-to-string for user-facing notices). The WebSocket message shape is the contract shared with the backend and the web client, so `parseWsMessage` is tested against it directly.
+`vitest run` covers the pure logic that does not need a VS Code host, 44 tests across four files: `conflictsEqual` (the repaint-suppression fingerprint), `normalizeGitUrl` (`gitUrl.ts`, the remote-to-`owner/repo` normalization that drives project detection), `parseWsMessage` (the WebSocket message contract, the stable cross-repo shape), and `getErrorMessage` (`errorMessage.ts`, error-to-string for user-facing notices). The WebSocket message shape is the contract shared with the backend and the web client, so `parseWsMessage` is tested against it directly.
 
 ## Project layout
 
@@ -163,4 +155,4 @@ The conflict algorithm now lives in exactly one place, the Rust backend, and the
 
 The backend holds all overlay state in RAM on a single instance, so live state is lost on restart and the system does not scale past one backend process without shared state and cross-instance broadcast. The Notbremse is reactive by nature, as noted above.
 
-For the why behind the design, and for the conflict-prediction algorithm in full, see the [backend](../backend) and [lightning-git.com](https://lightning-git.com).
+For the why behind the design, and for the conflict-prediction algorithm in full, see the [backend](../backend) and the [monorepo README](../README.md).

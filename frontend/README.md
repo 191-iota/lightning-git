@@ -4,13 +4,9 @@
 
 The Vue web surface for Lightning Git: a dashboard that renders the same realtime overlay data as the editor extension, plus the organization and project management screens.
 
-Lightning Git is a realtime visibility layer on top of Git. Between the moment a developer writes code and the moment they commit, nobody else can see the work in progress, Git deals in commits, not in the stream of edits between them. Lightning Git mirrors a repository read-only, holds each person's in-flight edits as ephemeral overlay state in the backend's RAM, and streams that state to the rest of the team. It is an early-stage, self-hostable project. [lightning-git.com](https://lightning-git.com) serves only the landing page; there is no public instance, you host it yourself.
+It is an early-stage, self-hostable project. [lightning-git.com](https://lightning-git.com) serves only the landing page; there is no public instance, you host it yourself.
 
-The product is three repositories against one backend:
-
-- [lightning-git-backend](../backend) (Rust / actix-web): owns the read-only repo clones, the in-RAM overlay state, the WebSocket realtime layer, and merge-conflict prediction.
-- `lightning-git-frontend` (this repo, Vue 3 + TypeScript + Vite + Pinia): the web dashboard plus org/project management.
-- [lightning-git-vsc](../extension) (VS Code extension, TypeScript): the developer surface inside the editor.
+This web app is one of three packages in the [Lightning Git monorepo](../README.md), alongside the [backend](../backend) (Rust / actix-web) and the [extension](../extension), the VS Code developer surface.
 
 <p align="center">
   <img src="assets/system.png" alt="One backend, two surfaces: this web dashboard and the VS Code extension over the Rust backend, with a read-only git mirror and a Supabase metadata store" width="900">
@@ -61,7 +57,7 @@ The `snapshot` message arrives on subscribe and seeds both the existing comments
   <img src="assets/conflict-prediction.png" alt="The conflict algorithm this view ports from the backend: per-source diffs against main, clustered, judged by whether the sources disagree" width="860">
 </p>
 
-The live file view does not just paint the raw text of each teammate. It projects every contributor's content into a per-line view for attribution, and renders the predicted-conflict set the backend pushes over the WebSocket.
+The live file view projects every contributor's content into a per-line view for attribution, and renders the predicted-conflict set the backend pushes over the WebSocket.
 
 `utils/overlay.ts` `computeProjectedLines` runs an LCS diff (`diffArrays` from the `diff` package) of each user's content against the base, so a single inserted line does not cascade-tag every line below it as that user's edit. Lines are tagged last-writer-wins but prefer the most recent non-empty contributor, because otherwise one teammate clearing their whole file would blank the projection for everyone. Pure deletions are surfaced as untagged base lines so the viewer still sees the file's structure rather than a hole.
 
@@ -137,9 +133,17 @@ Run the [lightning-git-backend](../backend) locally first; it exposes the `/api`
 
 ## Testing
 
-Tests run under Vitest with `@vue/test-utils` and `happy-dom` as the environment. There are 22 tests across two spec files: `src/utils/overlay.spec.ts` (15, 6 for `buildTree`, 9 for `computeProjectedLines`) and `src/components/FileTreeNode.spec.ts` (7). Twenty-one pass and one fails on purpose.
+Tests run under Vitest with `@vue/test-utils` and `happy-dom` as the environment. There are 54 tests across seven spec files, and the suite is green.
 
-The failing test is `computeProjectedLines > 'only tags the deleted region, not the lines that shifted up'`. It expects `['a','b','d','e']` but the implementation keeps the deleted line `c`, returning `['a','b','c','d','e']`, because `computeProjectedLines` surfaces pure deletions as untagged base lines so a stakeholder still sees the file's structure rather than a gap. The test is left red to mark that the deletion-projection behaviour is an open design question, not settled.
+- `utils/overlay.spec.ts` (18): `buildTree` plus `computeProjectedLines`, the LCS projection and its last-writer-wins tagging, including pure deletions surfaced as untagged base lines and the overlapping-edit case that once spun the projection into a non-terminating loop.
+- `stores/auth.spec.ts` (7): the single-flight refresh and the session lifecycle.
+- `services/api.spec.ts` (6): the 401 interceptor refreshing once and retrying once, and never refreshing the `/refresh` call itself.
+- `components/FileTreeNode.spec.ts` (7): the file-tree component.
+- `router/guard.spec.ts` (6): the auth, guest, and org access rules.
+- `utils/confirm.spec.ts` (6): the confirm and prompt dialog promise bridge.
+- `services/ws.spec.ts` (4): the per-file `OverlayWebSocket`, including that a disposed socket never reconnects.
+
+Run them with `npm test`.
 
 ## Project layout
 
@@ -160,7 +164,3 @@ src/
 This is an early-stage prototype, not production software, and a few things are deferred on purpose.
 
 Conflict prediction now lives only in the Rust backend; this app renders the conflict set pushed over the WebSocket, so there is no ported copy to drift. Live overlays, predicted conflicts, and comments all arrive over the WebSocket. Comments in the backend are in-memory only and are lost on restart. The backend keeps overlay state in a single in-memory instance with an in-process broadcast, so running more than one backend would need shared state. The backend's CORS is hard-wired to the localhost dev origin and would need to be environment-driven for a real deployment, and the WebSocket connect path on the backend checks a valid JWT but does not verify project membership on the socket itself.
-
----
-
-The project lives in the [lightning-git](https://github.com/191-iota/lightning-git) monorepo as `backend/`, `frontend/`, and `extension/`.
