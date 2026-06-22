@@ -36,13 +36,19 @@ export function activate(context: vscode.ExtensionContext): void {
   notbremseStatusItem.show();
   context.subscriptions.push(notbremseStatusItem);
 
+  // Backs the right-hand side of the teammate diff. Keyed by URI so several
+  // teammate diffs can be open at once, and fires onDidChange so reopening the
+  // same teammate refreshes instead of showing a stale buffer.
   const contentProvider = new (class implements vscode.TextDocumentContentProvider {
-    private content = "";
-    setContent(content: string): void {
-      this.content = content;
+    private readonly contents = new Map<string, string>();
+    private readonly emitter = new vscode.EventEmitter<vscode.Uri>();
+    readonly onDidChange = this.emitter.event;
+    setContent(uri: vscode.Uri, content: string): void {
+      this.contents.set(uri.toString(), content);
+      this.emitter.fire(uri);
     }
-    provideTextDocumentContent(): string {
-      return this.content;
+    provideTextDocumentContent(uri: vscode.Uri): string {
+      return this.contents.get(uri.toString()) ?? "";
     }
   })();
 
@@ -239,40 +245,64 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
-  const viewChangeCommand = vscode.commands.registerCommand("lightning-git.viewChange", async () => {
-    if (!overlaySession) {
-      void vscode.window.showWarningMessage("No active session.");
-      return;
-    }
-    const users = overlaySession.getActiveUsers();
-    if (users.length === 0) {
-      void vscode.window.showInformationMessage("No other users have made changes yet.");
-      return;
-    }
-    const selected = await vscode.window.showQuickPick(
-      users.map((userId) => ({ label: userId.slice(0, 8), description: "View their changes", userId })),
-      { placeHolder: "Select a teammate to view their changes" },
-    );
-    if (!selected) return;
+  const viewChangeCommand = vscode.commands.registerCommand(
+    "lightning-git.viewChange",
+    async (presetUserId?: string) => {
+      const session = overlaySession;
+      if (!session) {
+        void vscode.window.showWarningMessage("No active session.");
+        return;
+      }
+      const users = session.getActiveUsers();
+      if (users.length === 0) {
+        void vscode.window.showInformationMessage("No other users have made changes yet.");
+        return;
+      }
 
-    const change = overlaySession.getOtherUserChange(selected.userId);
-    if (!change) return;
+      // the line hover passes the teammate's id directly; otherwise prompt
+      // with display names, not raw uuids.
+      let userId =
+        typeof presetUserId === "string" && users.includes(presetUserId) ? presetUserId : undefined;
+      if (!userId) {
+        const selected = await vscode.window.showQuickPick(
+          users.map((id) => ({
+            label: session.authorLabelFor(id),
+            description: "View their live changes",
+            userId: id,
+          })),
+          { placeHolder: "Select a teammate to view their changes" },
+        );
+        if (!selected) {
+          return;
+        }
+        userId = selected.userId;
+      }
 
-    const currentDocument = vscode.window.activeTextEditor?.document;
-    if (!currentDocument) {
-      void vscode.window.showWarningMessage("Open a file before viewing teammate changes.");
-      return;
-    }
+      const change = session.getOtherUserChange(userId);
+      if (!change) {
+        return;
+      }
 
-    contentProvider.setContent(change.content);
-    const teammateUri = vscode.Uri.parse(`lightning-git:${selected.label}-version`);
-    await vscode.commands.executeCommand(
-      "vscode.diff",
-      currentDocument.uri,
-      teammateUri,
-      `Your version ↔ ${selected.label}'s version`,
-    );
-  });
+      const currentDocument = vscode.window.activeTextEditor?.document;
+      if (!currentDocument) {
+        void vscode.window.showWarningMessage("Open a file before viewing teammate changes.");
+        return;
+      }
+
+      const name = session.authorLabelFor(userId);
+      // path drives the pretty filename in the diff title; the user id rides in
+      // the query so two teammates sharing a display name still get distinct
+      // virtual documents.
+      const teammateUri = vscode.Uri.from({ scheme: "lightning-git", path: `/${name} (live)`, query: userId });
+      contentProvider.setContent(teammateUri, change.content);
+      await vscode.commands.executeCommand(
+        "vscode.diff",
+        currentDocument.uri,
+        teammateUri,
+        `Your version ↔ ${name}'s live version`,
+      );
+    },
+  );
 
   context.subscriptions.push(
     registerCommand,

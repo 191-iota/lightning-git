@@ -9,6 +9,7 @@ import {
 import { ConflictPanel } from "./conflictPanel";
 import { conflictsEqual } from "./conflictsEqual";
 import type { WsMessage } from "./parseWsMessage";
+import { colorForUser, initialsFor, withAlpha } from "./palette";
 
 type TeammateChange = {
   content: string;
@@ -43,15 +44,11 @@ export class OverlaySession {
   private readonly statusBarItem: vscode.StatusBarItem;
   private readonly conflictStatusBarItem: vscode.StatusBarItem;
 
-  private readonly peekDecoration = vscode.window.createTextEditorDecorationType({
-    backgroundColor: "rgba(74, 158, 255, 0.15)",
-    isWholeLine: true,
-    after: {
-      margin: "0 0 0 1em",
-      color: "#4a9eff99",
-      fontStyle: "italic",
-    },
-  });
+  // Per-teammate line tints, created lazily and keyed by colour so the same
+  // teammate keeps a stable colour across repaints. The display-name label
+  // rides on the first changed line as an instance decoration; the raw content
+  // never gets dumped into the editor, it lives in the hover and the full diff.
+  private readonly teammateDecorations = new Map<string, vscode.TextEditorDecorationType>();
 
   private readonly conflictDecoration = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
@@ -64,6 +61,16 @@ export class OverlaySession {
     after: {
       margin: "0 0 0 1em",
       color: "#ff8c0099",
+      fontStyle: "italic",
+    },
+  });
+
+  // An inline badge on the first line of each conflict region, naming the
+  // branches that disagree, so the editor shows what the conflict is rather
+  // than only a coloured border. The colour is set per range.
+  private readonly conflictLabelDecoration = vscode.window.createTextEditorDecorationType({
+    after: {
+      margin: "0 0 0 1.5em",
       fontStyle: "italic",
     },
   });
@@ -173,6 +180,35 @@ export class OverlaySession {
     return Array.from(this.teammateChanges.keys());
   }
 
+  // Self plus every teammate currently editing this file, used for stable
+  // per-user colour assignment.
+  private knownUserIds(): string[] {
+    return [this.userId, ...this.teammateChanges.keys()];
+  }
+
+  private getTeammateDecoration(color: string): vscode.TextEditorDecorationType {
+    let deco = this.teammateDecorations.get(color);
+    if (!deco) {
+      deco = vscode.window.createTextEditorDecorationType({
+        isWholeLine: true,
+        backgroundColor: withAlpha(color, 30),
+        overviewRulerColor: color,
+        overviewRulerLane: vscode.OverviewRulerLane.Left,
+      });
+      this.teammateDecorations.set(color, deco);
+    }
+    return deco;
+  }
+
+  private clearTeammateDecorations(editor: vscode.TextEditor | undefined): void {
+    if (!editor) {
+      return;
+    }
+    for (const deco of this.teammateDecorations.values()) {
+      editor.setDecorations(deco, []);
+    }
+  }
+
   getOtherUserChange(userId: string): TeammateChange | undefined {
     return this.teammateChanges.get(userId);
   }
@@ -219,8 +255,12 @@ export class OverlaySession {
 
     this.statusBarItem.dispose();
     this.conflictStatusBarItem.dispose();
-    this.peekDecoration.dispose();
+    for (const deco of this.teammateDecorations.values()) {
+      deco.dispose();
+    }
+    this.teammateDecorations.clear();
     this.conflictDecoration.dispose();
+    this.conflictLabelDecoration.dispose();
     this.commentDecoration.dispose();
   }
 
@@ -421,57 +461,72 @@ export class OverlaySession {
       return;
     }
 
-    const decorations: vscode.DecorationOptions[] = [];
+    // clear any prior peek so a teammate who stopped editing leaves no stale
+    // tint behind.
+    this.clearTeammateDecorations(editor);
+
+    const known = this.knownUserIds();
     const editorLineCount = editor.document.lineCount;
+    // group ranges per colour so one decoration type carries one teammate's
+    // tint; the label (display name, not a uuid, and no quoted content) sits
+    // on their first changed line. the actual text lives in the hover and the
+    // full diff.
+    const byColor = new Map<string, vscode.DecorationOptions[]>();
 
     for (const [userId, teammateChange] of this.teammateChanges) {
+      const color = colorForUser(userId, known);
+      const name = this.authorLabel(userId);
       const contentLines = teammateChange.content.split("\n");
       // strip trailing empty from a possible trailing newline so we dont
-      // peek a phantom blank line.
+      // tint a phantom blank line.
       if (contentLines.length > 0 && contentLines[contentLines.length - 1] === "") {
         contentLines.pop();
       }
-      const tag = userId.slice(0, 8);
-      // walk every teammate line (not just teammate.lines range, which
-      // the sender broadcasts as their FULL editor extent, capped to the
-      // receiver's editor by the old clamp). this exposed only the first
-      // differing line in the receiver's bounds; lines beyond the
-      // receiver's editor were never decorated.
+
+      const extraLines = Math.max(0, contentLines.length - editorLineCount);
+      const label = (extras: number): string =>
+        `  ${initialsFor(name)}  ${name}${extras > 0 ? `  +${extras} new line${extras === 1 ? "" : "s"}` : ""}`;
+
+      const opts: vscode.DecorationOptions[] = [];
+      // walk every comparable line; tint the ones that differ from our copy,
+      // and put the label on the first changed line only.
       const compareEnd = Math.min(contentLines.length, editorLineCount);
+      let labelled = false;
       for (let line = 0; line < compareEnd; line++) {
-        const teammateLine = contentLines[line];
-        const currentLine = editor.document.lineAt(line).text;
-        if (teammateLine === currentLine) continue;
-        decorations.push({
-          range: new vscode.Range(line, 0, line, currentLine.length),
-          renderOptions: {
-            after: {
-              contentText: ` ← ${tag}: "${this.truncate(teammateLine, 60)}"`,
-            },
-          },
+        if (contentLines[line] === editor.document.lineAt(line).text) {
+          continue;
+        }
+        const range = new vscode.Range(line, 0, line, editor.document.lineAt(line).text.length);
+        if (labelled) {
+          opts.push({ range });
+        } else {
+          labelled = true;
+          opts.push({
+            range,
+            renderOptions: { after: { contentText: label(extraLines), color, fontStyle: "italic" } },
+          });
+        }
+      }
+
+      // teammate only appended lines past the end of our copy: surface them
+      // with a single labelled tint on the last line rather than dumping the
+      // appended text inline.
+      if (!labelled && extraLines > 0 && editorLineCount > 0) {
+        const lastLine = editorLineCount - 1;
+        opts.push({
+          range: new vscode.Range(lastLine, 0, lastLine, editor.document.lineAt(lastLine).text.length),
+          renderOptions: { after: { contentText: label(extraLines), color, fontStyle: "italic" } },
         });
       }
-      // teammate has more lines than the receiver, append a single
-      // trailing decoration on the last receiver line listing the extras
-      // so they dont stay invisible.
-      if (contentLines.length > editorLineCount && editorLineCount > 0) {
-        const lastLine = editorLineCount - 1;
-        const extras = contentLines
-          .slice(editorLineCount)
-          .map((l) => l.length > 0 ? l : "·")
-          .join(" | ");
-        decorations.push({
-          range: new vscode.Range(lastLine, editor.document.lineAt(lastLine).text.length, lastLine, editor.document.lineAt(lastLine).text.length),
-          renderOptions: {
-            after: {
-              contentText: `  ⤵ ${tag} adds: "${this.truncate(extras, 120)}"`,
-            },
-          },
-        });
+
+      if (opts.length > 0) {
+        byColor.set(color, (byColor.get(color) ?? []).concat(opts));
       }
     }
 
-    editor.setDecorations(this.peekDecoration, decorations);
+    for (const [color, opts] of byColor) {
+      editor.setDecorations(this.getTeammateDecoration(color), opts);
+    }
     this.showingPeek = true;
 
     if (this.peekHideTimer) {
@@ -480,14 +535,11 @@ export class OverlaySession {
 
     this.peekHideTimer = setTimeout(() => {
       this.hidePeek();
-    }, 4000);
+    }, 6000);
   }
 
   private hidePeek(): void {
-    const editor = this.findVisibleEditor();
-    if (editor) {
-      editor.setDecorations(this.peekDecoration, []);
-    }
+    this.clearTeammateDecorations(this.findVisibleEditor());
     this.showingPeek = false;
   }
 
@@ -514,11 +566,11 @@ export class OverlaySession {
     }
 
     const users = Array.from(this.teammateChanges.keys())
-      .map((id) => id.slice(0, 8))
+      .map((id) => this.authorLabel(id))
       .join(", ");
 
     this.statusBarItem.text = `$(pulse) ${activeUsers} editing`;
-    this.statusBarItem.tooltip = `Click to peek teammate changes: ${users}`;
+    this.statusBarItem.tooltip = `${users} editing this file. Click to peek their changes.`;
     this.statusBarItem.color = "#4a9eff";
   }
 
@@ -624,6 +676,7 @@ export class OverlaySession {
     if (editors.length === 0) return;
     for (const editor of editors) {
       const decorations: vscode.DecorationOptions[] = [];
+      const labels: vscode.DecorationOptions[] = [];
       for (const c of this.conflicts) {
         const safeStart = Math.max(0, Math.min(c.base_start, editor.document.lineCount - 1));
         // for a pure-insert conflict (base_start === base_end, no base lines
@@ -639,8 +692,15 @@ export class OverlaySession {
             range: new vscode.Range(line, 0, line, editor.document.lineAt(line).text.length),
           });
         }
+        // badge on the first line of the region naming the branches that
+        // disagree, so the editor shows what the conflict is, not just a border.
+        labels.push({
+          range: new vscode.Range(safeStart, 0, safeStart, editor.document.lineAt(safeStart).text.length),
+          renderOptions: { after: { contentText: `  ${this.conflictBadgeText(c)}`, color: "#ff8c00", fontStyle: "italic" } },
+        });
       }
       editor.setDecorations(this.conflictDecoration, decorations);
+      editor.setDecorations(this.conflictLabelDecoration, labels);
     }
   }
 
@@ -723,7 +783,10 @@ export class OverlaySession {
     const line = position.line + 1;
 
     const md = new vscode.MarkdownString();
-    md.isTrusted = false;
+    // allow only the view-diff command link we emit below; everything else
+    // stays untrusted.
+    md.isTrusted = { enabledCommands: ["lightning-git.viewChange"] };
+    md.supportThemeIcons = true;
     md.supportHtml = false;
     let appended = false;
 
@@ -736,11 +799,38 @@ export class OverlaySession {
         : line > c.base_start && line <= c.base_end,
     );
     if (conflict) {
-      this.appendConflictMarkdown(md, conflict);
+      this.appendConflictMarkdown(md, conflict, document.languageId);
       appended = true;
     }
 
-    // 2) comments on this line
+    // 2) teammates whose live version of THIS line differs from ours. show
+    // their version syntax-highlighted plus a link to the full diff, instead
+    // of the cramped inline string the old peek dumped into the editor.
+    const currentText = document.lineAt(position.line).text;
+    const teammatesHere: { userId: string; name: string; text: string }[] = [];
+    for (const [userId, change] of this.teammateChanges) {
+      const their = change.content.split("\n")[position.line];
+      if (their !== undefined && their !== currentText) {
+        teammatesHere.push({ userId, name: this.authorLabel(userId), text: their });
+      }
+    }
+    if (teammatesHere.length > 0) {
+      if (appended) {
+        md.appendMarkdown("\n\n---\n\n");
+      }
+      teammatesHere.forEach((t, idx) => {
+        if (idx > 0) {
+          md.appendMarkdown("\n\n");
+        }
+        const args = encodeURIComponent(JSON.stringify([t.userId]));
+        md.appendMarkdown(`$(account) **${this.escapeMd(t.name)}** is editing this line\n\n`);
+        md.appendCodeblock(t.text, document.languageId);
+        md.appendMarkdown(`[$(diff) Open full diff](command:lightning-git.viewChange?${args})`);
+      });
+      appended = true;
+    }
+
+    // 3) comments on this line
     const commentsHere = this.comments.filter((c) => c.line === line);
     if (commentsHere.length > 0) {
       if (appended) md.appendMarkdown("\n\n---\n\n");
@@ -764,7 +854,7 @@ export class OverlaySession {
   /// branch, then by content within the branch so identical-content rows
   /// (multiple users agreeing on the same branch) collapse to one entry
   /// with all contributors credited.
-  private appendConflictMarkdown(md: vscode.MarkdownString, conflict: MergeConflict): void {
+  private appendConflictMarkdown(md: vscode.MarkdownString, conflict: MergeConflict, languageId: string): void {
     md.appendMarkdown(
       `**Merge conflict** · ${this.conflictRangeLabel(conflict.base_start, conflict.base_end)}\n\n`,
     );
@@ -796,10 +886,31 @@ export class OverlaySession {
         const labels = v.contributors
           .map((id) => (id ? `${this.authorLabel(id)} (live)` : "committed"))
           .join(", ");
-        const body = v.content.length === 0 ? "(removed)" : v.content.join("\n");
-        md.appendMarkdown(`_${this.escapeMd(labels)}_\n\n\`\`\`\n${body}\n\`\`\``);
+        if (v.content.length === 0) {
+          md.appendMarkdown(`_${this.escapeMd(labels)}_\n\n_(removed)_`);
+        } else {
+          md.appendMarkdown(`_${this.escapeMd(labels)}_\n\n`);
+          md.appendCodeblock(v.content.join("\n"), languageId);
+        }
       }
     }
+  }
+
+  // Short inline badge for a conflict region: the branches that disagree,
+  // e.g. "conflict: main ↔ feature/x", or a count past two branches.
+  private conflictBadgeText(conflict: MergeConflict): string {
+    const branches = Array.from(new Set(conflict.hunks.map((h) => h.branch)));
+    if (branches.length === 0) {
+      return "⚠ conflict";
+    }
+    if (branches.length === 1) {
+      // same-branch divergence (two overlays on one branch disagree).
+      return `⚠ conflict on ${branches[0]}`;
+    }
+    if (branches.length === 2) {
+      return `⚠ conflict: ${branches[0]} ↔ ${branches[1]}`;
+    }
+    return `⚠ conflict: ${branches.length} branches differ`;
   }
 
   /// Human label for a conflict's base range. base_start/base_end are 0-based,
