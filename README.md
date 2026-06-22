@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="lightning-git: catch Git conflicts before they reach a pull request" width="100%">
+</p>
+
 # Lightning Git
 
 ![alpha](https://img.shields.io/badge/status-alpha-9b2c2c?style=flat-square) ![CI](https://img.shields.io/badge/CI-path--filtered-1a1a1a?style=flat-square) ![tests](https://img.shields.io/badge/tests-passing-2d6a4f?style=flat-square) ![self-hosted](https://img.shields.io/badge/self--hosted-9b2c2c?style=flat-square)
@@ -75,6 +79,22 @@ The Notbremse (the German term for an emergency brake, kept as a product name) i
 ## Why one flat repository
 
 Each package keeps its own lockfile and builds on its own. There is no root workspace and no shared `node_modules`. A deploy host points at a single subfolder and never has to understand the rest of the repo, and the VS Code extension is packaged without the dependency-hoisting surprises a shared install would cause. The cost is that the two Node packages install separately; for three pieces that ship to different places, that is the cheaper trade.
+
+## Quickstart with Docker
+
+The backend and the frontend run together with one command. You need Docker and a Supabase project; the free tier is enough, and the backend uses it for accounts and project metadata.
+
+```bash
+cp .env.example .env
+# put your Supabase URL and keys in .env
+docker compose up --build
+```
+
+The frontend is then on http://localhost:5173 and the backend on http://localhost:8080.
+
+First-time setup also needs the database schema once: run `backend/src/supabase/table_creation.sql` in your Supabase project's SQL editor. Adding a repository to watch uses GitHub authorization so the backend can clone it read-only. Set the `GITHUB_*` values in `.env` for that; sign-up and sign-in work without them.
+
+This stack runs Lightning Git locally. Production deploys each package from its own subfolder; see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Running it locally
 
