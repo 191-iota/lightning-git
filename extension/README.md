@@ -7,7 +7,7 @@ The Lightning Git VS Code extension. It is the developer's surface for Lightning
 This extension is one of three packages in the [Lightning Git monorepo](../README.md), alongside the [backend](../backend) (Rust / actix-web) and the [frontend](../frontend) Vue web dashboard. It is an early-stage, self-hostable project.
 
 <p align="center">
-  <img src="assets/conflict-live.gif" alt="Two developers edit the same line; the conflict is detected live, before any commit, then cleared by the Notbremse" width="780">
+  <img src="assets/conflict-live.gif" alt="Two developers edit the same line; the conflict is detected live and shown inline with both versions, before any commit" width="780">
 </p>
 
 ## What a developer sees
