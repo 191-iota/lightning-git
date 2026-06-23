@@ -1,0 +1,20 @@
+# Local development stack: the backend and the frontend with one command.
+# Requires Docker and a Supabase project. Copy .env.example to .env and fill it
+# in first. This runs Lightning Git locally; production deploys each package from
+# its own subfolder (see DEPLOYMENT.md).
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_BASE_URL: "http://localhost:8080"
+      VITE_WS_URL: "ws://localhost:8080"
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
