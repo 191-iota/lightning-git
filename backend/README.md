@@ -7,7 +7,7 @@ The Rust engine behind Lightning Git. It clones each GitHub repository as a read
 This backend is one of three packages in the [Lightning Git monorepo](../README.md), alongside the [frontend](../frontend) web dashboard and the [extension](../extension) VS Code surface. It is an early-stage, self-hostable project, so read the scope section before treating any of this as production software.
 
 <p align="center">
-  <img src="assets/conflict-live.gif" alt="Two developers edit the same line; the conflict is detected live, before any commit, then cleared by the Notbremse" width="780">
+  <img src="assets/conflict-live.gif" alt="Two developers edit the same line; the conflict is detected live and shown inline with both versions, before any commit" width="780">
 </p>
 
 <p align="center">
