@@ -30,7 +30,7 @@ The product is three pieces around one backend, each kept as a self-contained su
 
 The conflict algorithm lives in exactly one place, the backend. It computes the conflict set and pushes it over the WebSocket, and both the frontend and the extension render what the backend sends rather than each carrying their own copy of the logic. Two clients that only display the server's result can never drift from the server or from each other, which is the whole reason an earlier pair of hand-ported copies was deleted.
 
-The marketing page is not part of the product and is not in this repository. It lives on its own at [lightning-git-landing](https://github.com/191-iota/lightning-git-landing) and is served at [lightning-git.com](https://lightning-git.com); that domain is the landing page only, not a running instance you can sign into.
+The marketing page is not part of the product and is not in this repository. It is served at [lightning-git.com](https://lightning-git.com); that domain is the landing page only, not a running instance you can sign into.
 
 ## What it looks like
 
